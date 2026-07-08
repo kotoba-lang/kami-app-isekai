@@ -60,14 +60,37 @@
         ix1 (+ (* v2 (- 1.0 fx)) (* v3 fx))]
     (+ (* ix0 (- 1.0 fz)) (* ix1 fz))))
 
+(def terrain-height-min
+  "Analytic lower bound of `terrain-height`'s output: `simple-fbm` is a
+  bilinear blend of `hash-noise` values, each confined to [0,1) by `frac`,
+  so the blend itself is confined to [0,1) — at amplitude 12 and baseline
+  18 (below) that puts `terrain-height` in `[18.0, 30.0)`."
+  18.0)
+
+(def terrain-height-max
+  "Analytic (open) upper bound of `terrain-height`'s output — see
+  `terrain-height-min`."
+  30.0)
+
+(defn terrain-height
+  "World-space terrain surface height at `(wx wz)`: a coarse 2-octave FBM
+  ridge around a baseline of 18.0 with amplitude 12.0 (so the output is
+  confined to `[terrain-height-min, terrain-height-max)`), matching the
+  Plains terrain silhouette roughly. Factored out of `terrain-voxel-at`
+  (which still uses it column-by-column to place stone/grass/air) so it
+  can be sampled directly as a `(x,z) -> height` heightmap, e.g. for a
+  top-down visualization, without walking every voxel y-layer."
+  [wx wz]
+  (+ (* (simple-fbm (* wx 0.02) (* wz 0.02)) 12.0) 18.0))
+
 (defn terrain-voxel-at
   "Palette index for the terrain-generation rule at local voxel coords
   `(lx ly lz)` within a chunk whose world origin is `[ox oy oz]`, or
-  nil for air. Bedrock floor layer shaped by a coarse FBM height,
-  matching the Plains terrain silhouette roughly."
+  nil for air. Bedrock floor layer shaped by `terrain-height`'s coarse FBM
+  height, matching the Plains terrain silhouette roughly."
   [[ox oy oz] lx ly lz]
   (let [wx (+ ox lx) wz (+ oz lz) wy (+ oy ly)
-        h (+ (* (simple-fbm (* wx 0.02) (* wz 0.02)) 12.0) 18.0)]
+        h (terrain-height wx wz)]
     (cond
       (< wy (- h 3.0)) palette-stone
       (< wy h) palette-grass
