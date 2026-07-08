@@ -12,10 +12,10 @@
 
 (deftest namespace-loads
   (testing "the restored CLJC namespace loads"
-    (is (some? (the-ns 'kami-app-isekai)))
-    (is (some? (the-ns 'kami-app-isekai.voxel-world)))
-    (is (some? (the-ns 'kami-app-isekai.pipelines)))
-    (is (some? (the-ns 'kami-app-isekai.omniverse)))))
+    (is (some? (find-ns 'kami-app-isekai)))
+    (is (some? (find-ns 'kami-app-isekai.voxel-world)))
+    (is (some? (find-ns 'kami-app-isekai.pipelines)))
+    (is (some? (find-ns 'kami-app-isekai.omniverse)))))
 
 (deftest palette-shape
   (is (= 11 (count vw/isekai-palette)))
