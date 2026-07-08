@@ -18,3 +18,84 @@ jobs:
           cli: latest
       - run: clojure -M:test
       - run: clojure -M:lint
+
+  render-verify:
+    # Real-pixel headless-WebGL2 verification (render-test/render_pixel_test.clj, via
+    # kotoba-lang/webgpu's kami.playwright + kami.sprite-gpu, readPixels-based): draws
+    # kami-app-isekai.voxel-world/terrain-height as a top-down heightmap and checks the
+    # rendered bytes against colors computed independently from the same kernel's math
+    # (kami-app-isekai.heightmap-color/height->color). Not part of the `test` job above —
+    # this repo's own deps.edn/clojure -M:test stays free of the render-pipeline dependency
+    # (kotoba-lang/webgpu + kotoba-lang/expr are sibling-checkout-only, see bb.edn).
+    name: bb render-test (headless WebGL2 pixel verification of terrain-height)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kami-app-isekai (as a sibling of webgpu/expr below, for bb.edn's ../webgpu)
+        uses: actions/checkout@v4
+        with: { path: kami-app-isekai }
+      - name: Checkout kotoba-lang/webgpu (sibling dep, render-test's kami.sprite-gpu/kami.playwright)
+        uses: actions/checkout@v4
+        with: { repository: kotoba-lang/webgpu, path: webgpu }
+      - name: Checkout kotoba-lang/expr (sibling dep, webgpu's bb.edn "../expr/src" — kotoba.expr)
+        uses: actions/checkout@v4
+        with: { repository: kotoba-lang/expr, path: expr }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Install babashka
+        uses: DeLaGuardo/setup-clojure@13.4
+        with: { bb: 'latest' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Install playwright (webgpu checkout has no committed package.json yet; ad hoc install)
+        working-directory: webgpu
+        run: npm install --no-save playwright@^1.61.1
+      - name: Install headless Chromium (full "Chrome for Testing" build)
+        working-directory: webgpu
+        run: npx playwright install --with-deps chromium
+      - name: Cross-platform chromium resolution fix (kotoba-lang/webgpu PR #9's technique)
+        working-directory: webgpu
+        # webgpu's scripts/pw_eval.cjs on main still hand-rolls a macOS-only
+        # ~/Library/Caches/ms-playwright cache-path search for the chromium binary, which
+        # silently resolves to nothing on Linux runners (kotoba-lang/webgpu#9, not yet merged
+        # at the time this workflow was written). Rather than depend on that unmerged branch
+        # ref (which could move or disappear), this re-applies the SAME fix technique
+        # (Playwright's own cross-platform `chromium.executablePath()` API) directly to this
+        # job's own checkout — see kotoba-lang/webgpu#9 for the original.
+        run: |
+          cat > scripts/pw_eval.cjs <<'EOF'
+          // playwright-clj bridge (CommonJS). Resolve playwright via NODE_PATH; resolve the chromium
+          // binary via Playwright's own `chromium.executablePath()` (override with PW_EXE). Usage:
+          //   NODE_PATH=<pw>/node_modules node pw_eval.cjs <js-file> [url]
+          //
+          // Cross-platform note: this used to hand-roll a cache-path search under
+          // `~/Library/Caches/ms-playwright` for a `chromium_headless_shell*/chrome-headless-shell-mac-arm64`
+          // binary -- both the cache root and the per-platform subdirectory name were macOS-only, so on
+          // Linux (ubuntu-latest CI runners, whose cache lives at `~/.cache/ms-playwright` and whose
+          // binary subdirectory is `chrome-headless-shell-linux64`) `findExe()` silently returned
+          // `undefined`. `chromium.executablePath()` is the public, version-independent Playwright API
+          // for exactly this (technique from kotoba-lang/webgpu PR #9) -- no OS-specific path logic here.
+          const { chromium } = require('playwright');
+          const { readFileSync } = require('fs');
+          function findExe() {
+            if (process.env.PW_EXE) return process.env.PW_EXE;
+            try { return chromium.executablePath(); } catch (_e) { return undefined; }
+          }
+          (async () => {
+            const js = readFileSync(process.argv[2], 'utf8');
+            const url = process.argv[3] || 'about:blank';
+            const browser = await chromium.launch({ headless: true, executablePath: findExe(),
+              args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--enable-webgl'] });
+            try {
+              const page = await browser.newPage();
+              if (url !== 'about:blank') await page.goto(url, { waitUntil: 'domcontentloaded' });
+              const result = await page.evaluate(`(async () => { ${js} })()`);
+              console.log(JSON.stringify({ ok: true, result }));
+            } catch (e) { console.log(JSON.stringify({ ok: false, error: String(e) })); }
+            finally { await browser.close(); }
+          })();
+          EOF
+      - name: bb render-test — headless WebGL2 pixel-verify of terrain-height's heightmap
+        working-directory: kami-app-isekai
+        env:
+          NODE_PATH: ${{ github.workspace }}/webgpu/node_modules
+        run: bb render-test

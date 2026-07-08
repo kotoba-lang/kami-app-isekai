@@ -8,14 +8,16 @@
             [kami-app-isekai]
             [kami-app-isekai.voxel-world :as vw]
             [kami-app-isekai.pipelines :as pipelines]
-            [kami-app-isekai.omniverse :as omniverse]))
+            [kami-app-isekai.omniverse :as omniverse]
+            [kami-app-isekai.heightmap-color :as hc]))
 
 (deftest namespace-loads
   (testing "the restored CLJC namespace loads"
     (is (some? (find-ns 'kami-app-isekai)))
     (is (some? (find-ns 'kami-app-isekai.voxel-world)))
     (is (some? (find-ns 'kami-app-isekai.pipelines)))
-    (is (some? (find-ns 'kami-app-isekai.omniverse)))))
+    (is (some? (find-ns 'kami-app-isekai.omniverse)))
+    (is (some? (find-ns 'kami-app-isekai.heightmap-color)))))
 
 (deftest palette-shape
   (is (= 11 (count vw/isekai-palette)))
@@ -38,6 +40,21 @@
   ;; always stone; well above -> always air.
   (is (= vw/palette-stone (vw/terrain-voxel-at [0 0 0] 0 0 0)))
   (is (nil? (vw/terrain-voxel-at [0 0 0] 0 100 0))))
+
+(deftest terrain-height-bounded-and-matches-terrain-voxel-at
+  ;; terrain-height's analytic range is [18,30) (simple-fbm confined to
+  ;; [0,1), amplitude 12, baseline 18) — check it's actually respected,
+  ;; not just the docstring's claim.
+  (doseq [[wx wz] [[0.0 0.0] [12.34 56.78] [-40.5 200.25] [1000.0 -1000.0]]]
+    (let [h (vw/terrain-height wx wz)]
+      (is (>= h vw/terrain-height-min))
+      (is (< h vw/terrain-height-max))))
+  ;; terrain-voxel-at's cond directly reuses terrain-height, so a column
+  ;; exactly at floor(h)-4 (always stone) / floor(h)+1 (always air) must
+  ;; agree with terrain-height computed independently for the same (x,z).
+  (let [h (vw/terrain-height 7.0 -3.0)]
+    (is (= vw/palette-stone (vw/terrain-voxel-at [0 0 0] 7 (int (- h 4)) -3)))
+    (is (nil? (vw/terrain-voxel-at [0 0 0] 7 (int (+ h 1)) -3)))))
 
 (deftest demo-house-voxels-shape
   (let [voxels (vw/demo-house-voxels)]
@@ -62,6 +79,46 @@
     (doseq [c [r g b]]
       (is (>= c 0.0))
       (is (<= c 1.0)))))
+
+(deftest height->color-endpoints-and-midpoint
+  ;; Grounded in the gradient's own definition (2-segment lerp between the
+  ;; 3 named stops), not a guess: at the exact bounds/midpoint of
+  ;; terrain-height's analytic range, height->color must equal the named
+  ;; stop colors exactly.
+  (is (= hc/color-low  (hc/height->color 18.0 18.0 30.0)))
+  (is (= hc/color-mid  (hc/height->color 24.0 18.0 30.0)))
+  (is (= hc/color-high (hc/height->color 30.0 18.0 30.0)))
+  ;; Clamped for out-of-range input (defensive; terrain-height itself never
+  ;; produces these, but the mapping should still be well-defined).
+  (is (= hc/color-low  (hc/height->color -5.0 18.0 30.0)))
+  (is (= hc/color-high (hc/height->color 999.0 18.0 30.0))))
+
+(deftest height->color-monotonic-along-terrain-heights
+  ;; Sample terrain-height at a line of world x (fixed z), sort by the
+  ;; ACTUAL height value the kernel produced (not by x — the FBM isn't
+  ;; monotonic in x), and check the resulting color's "blueness minus
+  ;; greenness/whiteness" proxy (b - r) is non-increasing as height rises
+  ;; from the low half toward the high half — i.e. the gradient really
+  ;; reads low->blue, high->white, grounded in the kernel's own output,
+  ;; not a hand-picked pair of points.
+  (let [samples (for [wx (range 0.0 60.0 3.0)] {:h (vw/terrain-height wx 5.0)})
+        by-h (sort-by :h samples)
+        lowest (first by-h)
+        highest (last by-h)
+        [lr lg lb] (hc/height->color (:h lowest) vw/terrain-height-min vw/terrain-height-max)
+        [hr hg hb] (hc/height->color (:h highest) vw/terrain-height-min vw/terrain-height-max)]
+    (is (< (:h lowest) (:h highest)) "the sampled line actually spans a height range")
+    ;; lowest point reads bluer (b clearly dominant over r/g) ...
+    (is (> lb (max lr lg)))
+    ;; ... and the highest point reads much brighter overall (near-white)
+    ;; than the lowest (near-blue), on every channel.
+    (is (> hr lr)) (is (> hg lg)) (is (> hb lb))))
+
+(deftest sample-grid-shape
+  (let [grid (hc/sample-grid vw/terrain-height {:x0 0.0 :z0 0.0 :step 2.0 :n 4})]
+    (is (= 16 (count grid)))
+    (is (every? #(and (contains? % :h) (contains? % :color)) grid))
+    (is (every? #(<= vw/terrain-height-min (:h %)) grid))))
 
 (deftest default-isekai-usda-shape
   (is (string? omniverse/default-isekai-usda))

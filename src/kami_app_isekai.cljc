@@ -36,7 +36,15 @@
   field state, voxel-chunk GPU streaming/upload, and the Omniverse/USD/
   PhysX parse-and-drive orchestration.
 
+  kami-app-isekai.heightmap-color is NOT a restoration from the original
+  crate (there was no top-down heightmap view there) — it's a small pure
+  height -> RGB gradient + grid sampler added to give voxel-world's
+  terrain-height kernel its first real, pixel-verified visualization (see
+  test/render_pixel_test.clj, which draws it through kotoba-lang/webgpu's
+  kami.sprite-gpu as a test/demo-only sibling dependency).
+
   Zero-dep portable CLJC."
   (:require [kami-app-isekai.voxel-world]
             [kami-app-isekai.pipelines]
-            [kami-app-isekai.omniverse]))
+            [kami-app-isekai.omniverse]
+            [kami-app-isekai.heightmap-color]))
