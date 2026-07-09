@@ -20,23 +20,36 @@
   the actual screenshot bytes (`heuristic-score` below) — every field varies with the real
   image, never a fake constant. No new credential-fetching machinery: env var only.
 
-  ── murakumo structured-state critic (a THIRD backend, alongside live-model/heuristic-score
-  above, never deleting either) ──
+  ── murakumo backend (a THIRD backend, alongside live-model/heuristic-score above, never
+  deleting either) — REAL VISION as of 2026-07-09 ──
 
   `gftdcojp/api.murakumo.cloud` (repo local-murakumo) is a public Cloudflare Worker exposing
-  an Anthropic-Messages-API-compatible bridge at POST /v1/messages, backed by
-  qwen-agentworld-35b-a3b — which is TEXT-ONLY (local-murakumo.anthropic/
-  anthropic-content->text strips any \"image\" content block server-side and replaces it with
-  a placeholder string, so sending it a screenshot the normal `live-model` way would silently
-  degrade to no visual signal at all). Instead of a screenshot, `structured-state-critique`
-  below builds a rich TEXT description combining two real signal sources — (1) `pixel-stats`
-  computed from the actual screenshot bytes (mean-luma/luma-stddev/vivid-frac/n-colors — the
-  same real numbers `heuristic-score` uses, just fed into a prompt instead of a local formula)
-  and (2) the actual captured game state at that moment (driver.mjs's __slimeHunt* debug-hook
-  reads) — and sends THAT as a plain text message. This is a genuine, honest upgrade over the
-  pure-formula `heuristic-score` (a real LLM reasons over the combined signals) but it is
-  **not vision scoring** — call it a text-grounded / structured-state critic everywhere, never
-  \"vision\", since it never sees pixels directly.
+  an Anthropic-Messages-API-compatible bridge at POST /v1/messages. Its backing model was
+  replaced 2026-07-09: qwen-agentworld-35b-a3b (TEXT-ONLY — local-murakumo.anthropic/
+  anthropic-content->text used to strip any \"image\" content block server-side and replace it
+  with a placeholder string) -> qwen3.6-35b-a3b, which is now confirmed VISION-CAPABLE
+  (`gftdcojp/local-murakumo` PR #34, merged: `anthropic-msg->openai` now builds real OpenAI
+  `image_url` content-parts for Anthropic-shaped \"image\" content blocks instead of stripping
+  them — verified live against the deployed instance).
+
+  `murakumo-vision-critique` below is the PRIMARY path: it sends the ACTUAL screenshot as a
+  base64 PNG image content block, reusing the exact same multimodal-message-building code the
+  direct-Anthropic `live-model` path already uses (`langchain.jvm/vision-json` ->
+  `vision-text` -> `vision-content`) — the only difference from `score-screenshot`'s live path
+  is which ChatModel it's pointed at (`murakumo-critic-model`/`murakumo-url` instead of
+  api.anthropic.com's default model/url). This is genuine vision scoring: the model sees
+  pixels directly, same as the direct-Anthropic path.
+
+  `structured-state-critique` (the original TEXT-ONLY path, built when the backing model was
+  still text-only) is KEPT but demoted to a defensive fallback ONLY — it builds a rich TEXT
+  description combining `pixel-stats` (mean-luma/luma-stddev/vivid-frac/n-colors, computed
+  from the real screenshot bytes) and the actual captured game state (driver.mjs's
+  __slimeHunt* debug-hook reads), and sends THAT as a plain text message, never an image
+  block. `murakumo-critique` (the new top-level entry point callers should use) tries the
+  vision path first and only falls through to this text-only path if the vision call's reply
+  fails to parse — covering the case where a future model swap regresses vision support
+  without anyone updating this file. Under normal operation (qwen3.6-35b-a3b, vision-capable,
+  confirmed working) the fallback is never exercised.
 
   Token convention matches `kotoba-lang/murakumo`'s `bin/claude-murakumo` launcher: the
   `MURAKUMO_CLAUDE_TOKEN` env var (must equal the Worker's `ANTHROPIC_PROXY_TOKEN` secret),
@@ -222,9 +235,11 @@
   "The fleet's live default (local-murakumo.worker/resolve-endpoint falls back to this exact
   id when the requested model isn't registered in infer.models) — passed through explicitly
   rather than relying on the fallback, so the request is honest about what it's asking for.
-  Override with MURAKUMO_CRITIC_MODEL (same env-var-first convention as PLAYTEST_VISION_MODEL)."
-  #?(:clj (or (System/getenv "MURAKUMO_CRITIC_MODEL") "qwen-agentworld-35b-a3b")
-     :cljs "qwen-agentworld-35b-a3b"))
+  Updated 2026-07-09: qwen-agentworld-35b-a3b (text-only) -> qwen3.6-35b-a3b (confirmed
+  vision-capable, gftdcojp/local-murakumo PR #34 — see namespace docstring). Override with
+  MURAKUMO_CRITIC_MODEL (same env-var-first convention as PLAYTEST_VISION_MODEL)."
+  #?(:clj (or (System/getenv "MURAKUMO_CRITIC_MODEL") "qwen3.6-35b-a3b")
+     :cljs "qwen3.6-35b-a3b"))
 
 #?(:clj
    (defn- murakumo-token []
@@ -268,6 +283,33 @@
                                 :http-fn murakumo-http-fn
                                 :json-write jvm/json-write :json-read jvm/json-read}))))
 
+;; Retry constants + `retry-transient` were added after this backend's first real end-to-end
+;; evolve-loop run (2026-07-09) hit a live Cloudflare 524 ("A Timeout Occurred" — the
+;; api.murakumo.cloud Worker's tunnel to the self-hosted fleet, not our own murakumo-http-fn's
+;; 180s client-side timeout) on the very first round's vision call: a real, observed transient
+;; infra hiccup, plausible now that vision requests are heavier (real image tokens) than the
+;; text-only prompts this fleet was tuned against before. Retrying a couple of times before
+;; giving up (and, if every attempt fails, degrading to :parsed false so `murakumo-critique`'s
+;; existing text-only fallback still kicks in, and so structured-state-critique itself degrades
+;; gracefully rather than throwing) turns one flaky request into a graceful degrade instead of
+;; aborting the whole evolve-loop run. Used by both structured-state-critique (below) and
+;; murakumo-vision-critique (further below) — a generic retry-a-thunk helper, not vision-specific.
+#?(:clj (def ^:private murakumo-retry-attempts 2)) ; total tries = 1 + this
+#?(:clj (def ^:private murakumo-retry-delay-ms 5000))
+
+#?(:clj
+   (defn- retry-transient
+     "Calls thunk `f`, retrying up to `n` more times (sleeping `delay-ms` between attempts) if
+     it throws. Re-throws the LAST exception once every attempt is exhausted — callers decide
+     how to degrade, this helper only owns the retry loop."
+     [f n delay-ms]
+     (loop [attempts-left n]
+       (let [outcome (try {:value (f)} (catch Exception e {:error e}))]
+         (cond
+           (contains? outcome :value) (:value outcome)
+           (pos? attempts-left) (do (Thread/sleep (long delay-ms)) (recur (dec attempts-left)))
+           :else (throw (:error outcome)))))))
+
 ;; JVM-only (like decode-image/pixel-stats/heuristic-score above — `format` is a JVM-only
 ;; core fn, and this whole feature is a JVM CLI tool, see namespace docstring).
 #?(:clj
@@ -309,28 +351,130 @@
 
 #?(:clj
    (defn structured-state-critique
-     "The murakumo backend's public entry point — same score shape as score-screenshot
-     ({:juice :feel :bugs :clarity :notes :mock :parsed}) plus :backend :murakumo so callers
-     can tell which of the 3 paths actually produced a given score. `image-b64` is used ONLY
-     to compute real pixel-stats locally (decode-image/pixel-stats, same functions
-     heuristic-score uses) — the bytes themselves are never sent over the wire; `game-state`
-     is an arbitrary EDN-able map (driver.mjs's readState() output, keywordized).
+     "DEFENSIVE FALLBACK ONLY as of 2026-07-09 (was the murakumo backend's sole entry point
+     before qwen3.6-35b-a3b's vision support landed — see namespace docstring). Callers should
+     use `murakumo-critique` (below), which tries `murakumo-vision-critique` first and only
+     calls this on an unparseable vision reply. Kept as a standalone, directly-callable
+     function (not merely inlined) so it stays independently testable and so a caller who
+     genuinely wants the text-grounded-only behavior still can. Same score shape as
+     score-screenshot ({:juice :feel :bugs :clarity :notes :mock :parsed}) plus :backend
+     :murakumo so callers can tell which of the backends actually produced a given score.
+     `image-b64` is used ONLY to compute real pixel-stats locally (decode-image/pixel-stats,
+     same functions heuristic-score uses) — the bytes themselves are never sent over the wire;
+     `game-state` is an arbitrary EDN-able map (driver.mjs's readState() output, keywordized).
 
      m defaults to (murakumo-critic-model); nil m (MURAKUMO_CLAUDE_TOKEN unset) degrades to
      a :mock true map naming the missing credential — NOT the pixel heuristic (that would
      conflate 'murakumo unavailable' with 'a murakumo call happened and this is its answer',
      the same honesty rule score-screenshot already follows for a live-model call whose reply
-     doesn't parse)."
+     doesn't parse). Also retries transiently-failing HTTP calls (`retry-transient` above,
+     same rationale as murakumo-vision-critique — this is the fallback path a caller lands on
+     BECAUSE vision already failed, so it degrading on the very next flaky request too would
+     be a needlessly fragile double failure)."
      ([image-b64 moment game-state] (structured-state-critique image-b64 moment game-state (murakumo-critic-model)))
      ([image-b64 moment game-state m]
       (if-not m
         {:juice nil :feel nil :bugs nil :clarity nil
          :notes "murakumo backend unavailable (MURAKUMO_CLAUDE_TOKEN unset)"
          :mock true :parsed false :backend :murakumo}
-        (let [stats (pixel-stats (decode-image image-b64))
-              prompt-text (structured-state-prompt moment stats game-state)]
-          (or (some-> (jvm/complete-json structured-state-system-prompt prompt-text m)
-                      (assoc :mock false :parsed true :backend :murakumo))
-              {:juice nil :feel nil :bugs nil :clarity nil
-               :notes "murakumo reply did not parse as structured JSON"
-               :mock false :parsed false :backend :murakumo}))))))
+        (try
+          (let [stats (pixel-stats (decode-image image-b64))
+                prompt-text (structured-state-prompt moment stats game-state)
+                reply (retry-transient #(jvm/complete-json structured-state-system-prompt prompt-text m)
+                                        murakumo-retry-attempts murakumo-retry-delay-ms)]
+            (or (some-> reply (assoc :mock false :parsed true :backend :murakumo))
+                {:juice nil :feel nil :bugs nil :clarity nil
+                 :notes "murakumo reply did not parse as structured JSON"
+                 :mock false :parsed false :backend :murakumo}))
+          (catch Exception e
+            {:juice nil :feel nil :bugs nil :clarity nil
+             :notes (str "murakumo text-only call failed after " (inc murakumo-retry-attempts)
+                         " attempt(s): " (.getMessage e))
+             :mock false :parsed false :backend :murakumo}))))))
+
+;; ───────────────────────── murakumo vision critic (PRIMARY path, 2026-07-09) ─────────────────────────
+;; See namespace docstring: qwen3.6-35b-a3b (murakumo-model-id's default) is now confirmed
+;; vision-capable, so the murakumo backend can finally see the actual screenshot, the same way
+;; live-model/score-screenshot already does — just pointed at a different URL/model via the
+;; :url override already wired into murakumo-critic-model.
+
+#?(:clj
+   (defn- vision-prompt-with-state
+     "The same scoring-instructions prompt score-screenshot's live-model path sends
+     (`prompt` above), PLUS the captured game state folded in as extra text context. Real
+     vision doesn't need pixel-stats re-derived in the prompt (the model sees the actual
+     pixels directly) but game-state (phase/status/snapshot/globals from driver.mjs's
+     __slimeHunt* debug-hook) can carry information that isn't necessarily visually obvious
+     from a single static frame (e.g. exact HP/score numbers off-frame or too small to read),
+     so it stays valuable side-channel context even on the vision path."
+     [moment game-state]
+     (str (prompt moment) "\n\nAdditional context — game state captured via the game's own "
+          "debug hooks at this exact instant (may include information not visually obvious "
+          "from the frame alone): " (fmt-game-state game-state))))
+
+#?(:clj
+   (defn murakumo-vision-critique
+     "The murakumo backend's PRIMARY path as of 2026-07-09. Sends the ACTUAL screenshot as a
+     base64 PNG image content block through `langchain.jvm/vision-json` — the exact same
+     multimodal-message-building code (`vision-json` -> `vision-text` -> `vision-content`)
+     score-screenshot's direct-Anthropic `live-model` path already uses; only the ChatModel
+     differs (`murakumo-critic-model`, which points :url at api.murakumo.cloud and :model at
+     `murakumo-model-id` — qwen3.6-35b-a3b, vision-capable, verified). This is genuine vision
+     scoring: the model sees pixels directly, not a text description of them.
+
+     Same score shape as score-screenshot/structured-state-critique
+     ({:juice :feel :bugs :clarity :notes :mock :parsed :backend}). m defaults to
+     (murakumo-critic-model); nil m (MURAKUMO_CLAUDE_TOKEN unset) degrades honestly to a
+     :mock true map, same convention as structured-state-critique. Retries transiently-failing
+     HTTP calls (see `retry-transient` above) before giving up; an unparseable reply OR a
+     call that still fails after every retry both degrade to :parsed false — neither itself
+     falls through to the text-only path; that fallback lives one level up, in
+     `murakumo-critique`, so this function stays a pure 'ask the vision model, report what
+     happened' primitive that's easy to test/call directly."
+     ([image-b64 moment game-state] (murakumo-vision-critique image-b64 moment game-state (murakumo-critic-model)))
+     ([image-b64 moment game-state m]
+      (if-not m
+        {:juice nil :feel nil :bugs nil :clarity nil
+         :notes "murakumo backend unavailable (MURAKUMO_CLAUDE_TOKEN unset)"
+         :mock true :parsed false :backend :murakumo}
+        (try
+          (let [reply (retry-transient
+                       #(jvm/vision-json m (vision-prompt-with-state moment game-state) image-b64)
+                       murakumo-retry-attempts murakumo-retry-delay-ms)]
+            (or (some-> reply (assoc :mock false :parsed true :backend :murakumo))
+                {:juice nil :feel nil :bugs nil :clarity nil
+                 :notes "murakumo vision reply did not parse as structured JSON"
+                 :mock false :parsed false :backend :murakumo}))
+          (catch Exception e
+            {:juice nil :feel nil :bugs nil :clarity nil
+             :notes (str "murakumo vision call failed after " (inc murakumo-retry-attempts)
+                         " attempt(s): " (.getMessage e))
+             :mock false :parsed false :backend :murakumo}))))))
+
+#?(:clj
+   (defn murakumo-critique
+     "The murakumo backend's top-level public entry point — what `scripts/playtest_coscientist.clj`
+     calls for the :murakumo backend. Tries `murakumo-vision-critique` (real vision, PRIMARY —
+     already retries transient HTTP failures internally, see `retry-transient`) first; ONLY
+     when that reply is still :parsed false after every retry (e.g. a future model swap that
+     silently regresses vision support, a malformed reply, or a transient failure that outlived
+     the retry budget) does it fall through to `structured-state-critique` (the original
+     text-grounded, pixel-stats + game-state path, itself also retry-protected) as a DEFENSIVE
+     fallback — see namespace docstring for the full rationale. Under
+     normal operation (qwen3.6-35b-a3b, confirmed vision-capable) the fallback branch is never
+     exercised; when it IS exercised, the returned map's :notes is prefixed so callers/report
+     readers can tell a fallback happened rather than assuming vision was used.
+
+     Same score shape as the other two ({:juice :feel :bugs :clarity :notes :mock :parsed
+     :backend}), plus :vision-fallback (bool, true only when the text-only path actually ran)."
+     ([image-b64 moment game-state] (murakumo-critique image-b64 moment game-state (murakumo-critic-model)))
+     ([image-b64 moment game-state m]
+      (let [vision-result (murakumo-vision-critique image-b64 moment game-state m)]
+        (if (:parsed vision-result)
+          (assoc vision-result :vision-fallback false)
+          (let [fallback-result (structured-state-critique image-b64 moment game-state m)]
+            (-> fallback-result
+                (assoc :vision-fallback true)
+                (cond-> (:parsed fallback-result)
+                  (update :notes #(str "[vision reply unparseable — fell back to text-only "
+                                        "structured-state critic] " %))))))))))
