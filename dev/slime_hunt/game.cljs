@@ -13,19 +13,29 @@
    render-test already pixel-verified for `terrain-height`, not Canvas2D).
 
    Trimmed from `isekai.game.cljc`'s ~700 lines to this game's own needs: no netsync/level/
-   itonami-bridge/leaderboard/audio (all opt-in bits network-isekai uses for OTHER games), no
-   FSM-driven player animation (a straightforward simplification, not a requirement — the win/
+   itonami-bridge/leaderboard/combo/FSM-driven player animation/hit-stop (all opt-in bits
+   network-isekai uses for OTHER games or that don't apply to a static top-down sprite — the win/
    lose GAMEPLAY is unaffected). What IS kept, because the task requires it: the exact generic
    win/lose convention — game-over fires when the \"player\"-tagged entity count hits 0,
    victory fires when the \"picked\"-tagged count reaches `scene :flow :victory :when-picked`
    (see `victory-picked` / `game-over?`/`victory?` below) — read from scene.edn data, not
-   hardcoded here, exactly like drive."
+   hardcoded here, exactly like drive.
+
+   2026-07-09 quality pass (real Playwright playtesting — see this repo's PR description for
+   the evidence): the MVP had zero audio and zero hit/pickup/invuln feedback despite `kami.audio`
+   + `kami.scene2d/frame-quads`'s own `fx`/`shake` params being right there and already proven in
+   production by `isekai.game`'s `spawn-burst`/`step-fx`/`popup-fx`/screen-shake pattern (see
+   below `run-loop!`). This pass wires exactly that pattern in — sfx + particle bursts + a brief
+   screen-shake on hit, a floating \"+1\" + sparkle on pickup, a translucent flicker ring driven
+   directly off the REAL `invuln` defatom (via `host/globals`, not a separate timer) so the post-
+   hit grace window is finally visible, and sfx + a CSS pop-in on the victory/game-over cards."
   (:require [cljs.reader :as edn]
             [kami.host :as host]
             [kami.scene2d :as scene2d]
             [kami.webgl :as wgl]
             [kami.ui :as ui]
             [kami.input :as input]
+            [kami.audio :as audio]
             [kotoba.engine-clj.ast :as kast]
             [kotoba.engine-clj.codegen :as kcodegen]
             [kotoba.engine-clj.wasm-bytes :as kwasm]))
@@ -51,6 +61,57 @@
     (mapv (fn [{:keys [x y color]}]
             {:pos [x y] :size [half half] :rot 0.0 :shape 1 :color (conj (vec color) 1.0)})
           tiles)))
+
+;; ---- juice: tiny local copies of network-isekai's isekai.game particle/text fx helpers
+;; (spawn-burst/step-fx/popup-fx), scoped to this game's own 2 events (pick/hit — no combo,
+;; no hit-stop). Colors are NUMERIC rgba vectors, not hex strings: this game only ever renders
+;; through the GPU quad path (kami.scene2d/frame-quads -> fx->quads -> `(rgba color)`, kami.
+;; scene2d's private `rgba` just `vec`s whatever it's given), and `(vec "#fff3b0")` would
+;; silently explode a hex string into a vector of individual characters — isekai's own hex-
+;; string burst colors only make sense on its Canvas2D fallback path, which this game doesn't
+;; have, so this local copy sidesteps that mismatch entirely by using scene.edn's own [r g b a]
+;; float convention (see :render/profiles) for :fx :burst :colors too. ------------------------
+(defn- spawn-burst
+  "Radial particle spray for one game beat, authored as DATA in scene :fx :burst — see
+   isekai.game.cljc's spawn-burst for the pattern this mirrors."
+  [{:keys [n spd grav life size colors] :or {n 10 spd 2.4 grav 0.13 life 26 size 5 colors [[1.0 1.0 1.0 1.0]]}} ox oy]
+  (let [cols (vec colors) nc (count cols)]
+    (for [i (range n)]
+      (let [ang (+ (* (/ i n) 2 js/Math.PI) (* 0.5 (js/Math.random)))
+            v (* spd (+ 0.6 (* 0.8 (js/Math.random))))]
+        {:kind :part :ox ox :oy oy
+         :vx (* (js/Math.cos ang) v) :vy (- (* (js/Math.sin ang) v) 1.0)
+         :grav grav :life life :max life :size size :color (nth cols (mod i nc))}))))
+
+(defn- text-fx
+  "A floating label effect (e.g. the \"+1\" on a pickup) — same shape isekai.game's popup-fx
+   produces, minus the %n/%c combo substitution this game has no use for."
+  [text ox oy color]
+  {:kind :text :ox ox :oy oy :vx 0 :vy -1.4 :life 40 :max 40 :size 22 :color color :text text})
+
+(defn- step-fx
+  "Advance every effect one frame (particles arc under gravity; text drifts up) and cull dead ones."
+  [fx]
+  (->> fx
+       (map (fn [e] (-> e (update :ox + (:vx e)) (update :oy + (:vy e))
+                        (update :vy + (if (= (:kind e) :part) (:grav e 0.0) 0.0))
+                        (update :life dec))))
+       (filter #(pos? (:life %)))
+       vec))
+
+(defn- invuln-fx
+  "A translucent flicker ring around the player, computed FRESH every frame straight off the
+   REAL `invuln` defatom value (via `host/globals` — see run-loop! below), not a separately-
+   timed fx entry — so it can never drift out of sync with the actual post-hit grace window
+   logic.cljc's slime-*-ai systems gate re-hits on (`invuln-ticks` = 45, ~0.75s @60fps). Blinks
+   every 6 ticks (~0.1s) so it reads as an active i-frame indicator, not a static halo. Player
+   is always screen-centre (kami.sprite2d.layout's default camera follows the player), so a
+   screen-centre [0 0] fx offset lands exactly on them with zero extra bookkeeping."
+  [ticks-left]
+  (when (and ticks-left (pos? ticks-left) (even? (quot ticks-left 6)))
+    ;; a soft cyan pulse (not plain white — reads as "shield", distinct from the red hit-burst),
+    ;; kept translucent (alpha .24) so it stays a pulse rather than a flat whiteout at this size.
+    [{:kind :part :ox 0 :oy 0 :vx 0 :vy 0 :grav 0 :life 1 :max 1 :size 44 :color [0.6 0.9 1.0 0.24]}]))
 
 ;; ---- HUD: EDN → kami.ui panel, from the live snapshot + scene :hud data ----------------------
 (defn- hud-spec [scene snap]
@@ -78,8 +139,23 @@
     (doseq [[k v] styles] (aset (.-style e) (name k) v))
     e))
 
+;; a snappy scale/opacity pop-in for the flow overlay cards (title/game-over/victory), driven
+;; with plain inline styles (no CSS build step here): jump to a shrunk/transparent state with
+;; transitions off, force a reflow, then re-enable the transition and animate to the resting
+;; state — addresses this game's previously-static, feedback-free victory/game-over cards
+;; (見た目・演出 gap named in the quality-pass task).
+(defn- pop-in! [el]
+  (set! (.. el -style -transition) "none")
+  (set! (.. el -style -transform) "scale(0.75)")
+  (set! (.. el -style -opacity) "0")
+  (.-offsetWidth el) ;; force a reflow so the transition below actually animates
+  (set! (.. el -style -transition) "transform .22s cubic-bezier(.34,1.56,.64,1), opacity .18s ease-out")
+  (set! (.. el -style -transform) "scale(1)")
+  (set! (.. el -style -opacity) "1"))
+
 (defn- mount-flow! [canvas scene]
   (let [flow (:flow scene)
+        bank (or (:audio scene) audio/default-bank)
         parent (.-parentElement canvas)
         overlay (mk-el "div" {:position "absolute" :inset "0" :display "flex" :z-index "20"
                               :align-items "center" :justify-content "center" :text-align "center"
@@ -98,47 +174,88 @@
               (let [s (get flow k)]
                 (set! (.-textContent logo) (or (:logo s) ""))
                 (set! (.-textContent sub) (or (:sub s) ""))
-                (set! (.-textContent prompt) (or (:prompt s) ""))))
+                (set! (.-textContent prompt) (or (:prompt s) ""))
+                (pop-in! logo)))
             (show! [v?] (set! (.. overlay -style -display) (if v? "flex" "none")))
             (set-phase! [p] (reset! phase p) (.setAttribute overlay "data-phase" (name p))
                         (set! (.-__slimeHuntPhase js/window) (name p)))]
       (set-phase! :title) (paint! :title) (show! true)
       (.addEventListener overlay "click"
         (fn [_] (case @phase
-                  :title (do (set-phase! :play) (show! false))
+                  :title (do (audio/resume!) (set-phase! :play) (show! false))
                   (:gameover :victory) (.reload js/location)
                   nil)))
       (.addEventListener js/window "keydown"
         (fn [e] (when (and (= " " (.-key e)) (not= @phase :play))
                   (.preventDefault e)
                   (case @phase
-                    :title (do (set-phase! :play) (show! false))
+                    :title (do (audio/resume!) (set-phase! :play) (show! false))
                     (:gameover :victory) (.reload js/location)
                     nil))))
       {:phase phase
-       :game-over! (fn [] (when (= @phase :play) (set-phase! :gameover) (paint! :gameover) (show! true)))
-       :victory!   (fn [] (when (= @phase :play) (set-phase! :victory) (paint! :victory) (show! true)))})))
+       :game-over! (fn [] (when (= @phase :play)
+                             (set-phase! :gameover) (paint! :gameover) (show! true)
+                             (audio/play! bank :gameover)))
+       :victory!   (fn [] (when (= @phase :play)
+                             (set-phase! :victory) (paint! :victory) (show! true)
+                             (audio/play! bank :victory)))})))
 
 ;; ---- boot + live loop --------------------------------------------------------------------
+;; Juice wiring (2026-07-09 quality pass): pick/hit are detected the SAME way the win/lose
+;; check already does — comparing "picked"/"life" marker counts tick-over-tick (no separate
+;; event bus) — then fire sfx + a local spawn-burst + (for hit) a brief screen-shake, mirroring
+;; isekai.game.cljc's run-loop! `fire!`/shk/fx pattern but sized to this game's 2 events.
 (defn- run-loop! [gl render! overlay flow scene tstate running]
-  (let [fr (atom 0)]
+  (let [fr (atom 0)
+        bank (or (:audio scene) audio/default-bank)
+        fx (atom [])       ;; active juice particles/text (stepped + culled every tick)
+        shk (atom 0)       ;; screen-shake frames remaining
+        prev (atom nil)]   ;; {:picked :life} as of the previous tick — nil on the first tick,
+                           ;; which suppresses spurious pick/hit fx on the nil->N transition.
+    ;; defatom globals probe for verification (host/globals reads them by name off the compiled
+    ;; WASM export table — see logic.cljc's `(defatom invuln 0)`) — same shape the other
+    ;; window.__slimeHunt* debug hooks already use.
+    (set! (.-__slimeHuntGlobals js/window) (fn [] (clj->js (host/globals tstate))))
     (letfn [(loop! []
               (when @running
                 (host/tick! tstate 16)
                 (let [snap (host/snapshot (:state tstate))
                       ctag (fn [t] (count (filter #(= (:tag %) t) snap)))
-                      w (.-width (.-canvas gl)) h (.-height (.-canvas gl))
-                      ;; background terrain quads drawn first (under), scene2d's entity/fx quads
-                      ;; appended after (over) — draw order = array order in kami.webgl.
-                      frame (update (scene2d/frame-quads scene snap [] @fr w h)
-                                    :quads #(into (:bg-quads scene) %))]
-                  (render! frame [w h])
-                  (when (zero? (mod (swap! fr inc) 4))
-                    (ui/render! overlay (hud-spec scene snap)))
-                  (when (= @(:phase flow) :play)
-                    (cond
-                      (zero? (ctag "player")) ((:game-over! flow))
-                      (>= (ctag "picked") (get-in scene [:flow :victory :when-picked] 999999)) ((:victory! flow)))))
+                      picked (ctag "picked") lives (ctag "life")
+                      p0 @prev
+                      pick? (and p0 (> picked (:picked p0)))
+                      hit?  (and p0 (< lives (:life p0)))
+                      invuln (get (host/globals tstate) "invuln")
+                      frames (get-in scene [:fx :shake :frames] 12)
+                      amp    (get-in scene [:fx :shake :amp] 0)
+                      w (.-width (.-canvas gl)) h (.-height (.-canvas gl))]
+                  (when pick?
+                    (audio/play! bank :pick)
+                    (swap! fx into (spawn-burst (get-in scene [:fx :burst :pick]) 0 -8))
+                    (swap! fx conj (text-fx "+1" 0 -30 [0.85 0.97 1.0 1.0])))
+                  (when hit?
+                    (audio/play! bank :hit)
+                    (swap! fx into (spawn-burst (get-in scene [:fx :burst :hit]) 0 0))
+                    (reset! shk frames))
+                  (reset! prev {:picked picked :life lives})
+                  (when-not hit? (swap! shk #(max 0 (dec %))))
+                  (swap! fx step-fx)
+                  (let [shk-t @shk
+                        shake (when (and (pos? shk-t) (pos? amp))
+                                (let [m (* amp (/ shk-t frames))]
+                                  [(* m (- (js/Math.random) 0.5) 2) (* m (- (js/Math.random) 0.5) 2)]))
+                        frame-fx (into @fx (invuln-fx invuln))
+                        ;; background terrain quads drawn first (under), scene2d's entity/fx quads
+                        ;; appended after (over) — draw order = array order in kami.webgl.
+                        frame (update (scene2d/frame-quads scene snap frame-fx @fr w h shake)
+                                      :quads #(into (:bg-quads scene) %))]
+                    (render! frame [w h])
+                    (when (zero? (mod (swap! fr inc) 4))
+                      (ui/render! overlay (hud-spec scene snap)))
+                    (when (= @(:phase flow) :play)
+                      (cond
+                        (zero? (ctag "player")) ((:game-over! flow))
+                        (>= picked (get-in scene [:flow :victory :when-picked] 999999)) ((:victory! flow))))))
                 (js/requestAnimationFrame loop!)))]
       (loop!))))
 
@@ -155,6 +272,12 @@
                  {:on-axes (fn [_] nil)
                   :on-action (fn [a down?] (swap! st update :keys (if down? conj disj) (name a)))})
     (set! (.-__slimeHuntSnapshot js/window) (fn [] (clj->js (host/snapshot st))))
+    ;; audio probe for verification (no ears in CI/Playwright) — same shape isekai.game's
+    ;; window.__audio uses: a count of scheduled cues + a manual trigger for smoke-testing.
+    (let [bank (or (:audio scene) audio/default-bank)]
+      (set! (.-__slimeHuntAudio js/window)
+            #js {:played (fn [] @audio/played)
+                 :play   (fn [k] (audio/resume!) (audio/play! bank (keyword k)))}))
     (-> (js/Promise.resolve (compile-game logic-src))
         (.then (fn [bytes]
                  (set! (.-__slimeHuntStatus js/window) (str "compiled -> " (.-length bytes) " bytes"))
