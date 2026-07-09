@@ -273,7 +273,12 @@
              "- scores: " (fmt-scores (:agg baseline)) "\n"
              "- driver: victory phase=" (get-in baseline [:driver :victory :phase])
              ", lose phase=" (get-in baseline [:driver :lose :phase]) "\n\n"
-             "## Roadmap (rounds tried)\n\n"
+             "## Per-moment director-persona notes (baseline)\n\n"
+             (str/join "\n"
+                       (map (fn [[shot-name score]]
+                              (str "- **" (name shot-name) "**: " (:notes score "(no notes)")))
+                            (:scores baseline)))
+             "\n\n## Roadmap (rounds tried)\n\n"
              "| round | total | grade | verdict | scores | victory | lose |\n"
              "|---|---|---|---|---|---|---|\n"
              (str/join "\n"
