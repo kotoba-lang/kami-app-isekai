@@ -12,12 +12,18 @@
   2026-07-09 kaizen: :wave (the oscillator-shape enum) is now ALSO tuned, as a small
   CATEGORICAL choice set (sine/square/sawtooth/triangle — the 4 real Web Audio
   OscillatorNode types every :wave value in this file already uses) rather than a numeric
-  random-walk — see `categorical-choices`/`perturb` below. :colors (rgba palettes) remains
-  deliberately untouched: a whole palette isn't a single categorical value the way :wave is,
-  and a naive per-channel numeric walk on it would drift into muddy/clashing colors rather
-  than a meaningfully different but still coherent palette — a real future pass here would
-  need a small curated PALETTE choice set (several hand-picked coherent palettes to choose
-  between), not a per-number perturbation, so it's left out of this pass too.
+  random-walk — see `categorical-choices`/`perturb` below.
+
+  2026-07-09 (2nd pass) kaizen: :colors (the :fx :burst :pick/:hit rgba particle palettes) is
+  now ALSO tuned, as a small curated CATEGORICAL PALETTE choice set — see
+  `path-categorical-choices`. A naive per-channel numeric walk on rgba colors drifts into
+  muddy/clashing intermediate colors rather than a meaningfully different but still coherent
+  palette, so each palette is hand-picked whole (several coherent alternatives per burst,
+  never a per-channel blend). :pick and :hit get DIFFERENT choice sets (unlike :wave, whose 4
+  oscillator types are valid everywhere) because they carry different semantic intent — pick
+  is a reward/sparkle beat, hit is a damage/danger beat — so `path-categorical-choices` is
+  keyed by the FULL keypath, not just the leaf, and `categorical-path?`/`choices-for` check it
+  before falling back to the leaf-keyed `categorical-choices` map that :wave uses.
 
   Deliberately DOES NOT touch :world/:flow/:input/logic.cljc gameplay speeds/ranges/layout —
   those need a WASM recompile and/or change win/lose balance, explicitly out of scope for
@@ -60,17 +66,17 @@
   `extract`/`apply-params` can't silently drift apart from each other."
   [[:fx :shake :amp] [:fx :shake :frames]
    [:fx :burst :pick :n] [:fx :burst :pick :spd] [:fx :burst :pick :grav]
-   [:fx :burst :pick :life] [:fx :burst :pick :size]
+   [:fx :burst :pick :life] [:fx :burst :pick :size] [:fx :burst :pick :colors]
    [:fx :burst :hit :n] [:fx :burst :hit :spd] [:fx :burst :hit :grav]
-   [:fx :burst :hit :life] [:fx :burst :hit :size]
+   [:fx :burst :hit :life] [:fx :burst :hit :size] [:fx :burst :hit :colors]
    [:audio :pick :freq] [:audio :pick :to] [:audio :pick :dur] [:audio :pick :gain] [:audio :pick :wave]
    [:audio :hit :freq] [:audio :hit :to] [:audio :hit :dur] [:audio :hit :gain] [:audio :hit :wave]
    [:audio :victory :freq] [:audio :victory :to] [:audio :victory :dur] [:audio :victory :gain] [:audio :victory :wave]
    [:audio :gameover :freq] [:audio :gameover :to] [:audio :gameover :dur] [:audio :gameover :gain] [:audio :gameover :wave]])
 
 (defn extract
-  "scene -> {keypath value} over tunable-paths only (:colors is left alone — see the
-  namespace docstring for why; :wave IS included, tuned categorically — see perturb)."
+  "scene -> {keypath value} over tunable-paths only (:wave and :colors are BOTH included,
+  tuned categorically — see perturb / path-categorical-choices)."
   [scene]
   (into {} (map (fn [kp] [kp (get-in scene kp)])) tunable-paths))
 
@@ -129,9 +135,30 @@
 ;; range. These are the 4 real Web Audio `OscillatorNode.type` values (`kami.audio`'s
 ;; synthesized sfx bank plays these directly, no others are valid) — every :wave value
 ;; already in scene.edn is one of these 4, so perturbing within this set can never produce
-;; an invalid oscillator type.
+;; an invalid oscillator type. Leaf-keyed (not full-keypath) since the same 4 choices are
+;; valid at every :audio *:wave leaf regardless of which cue it's on.
 (def categorical-choices
   {:wave ["sine" "square" "sawtooth" "triangle"]})
+
+;; :colors (rgba particle palettes) — 2026-07-09 (2nd pass): full-keypath-keyed, since
+;; :pick's palette (a reward/sparkle beat) and :hit's palette (a damage/danger beat) carry
+;; different semantic intent and can't share one choice set the way :wave's oscillator types
+;; can. Each palette here is a hand-picked WHOLE alternative (2-3 coherent rgba colors), never
+;; a per-channel blend — the first entry in each list is the scene.edn value this pass found
+;; already authored (icy-blue pick / red-orange hit), the rest are new coherent alternatives
+;; explored by perturb.
+(def path-categorical-choices
+  {[:fx :burst :pick :colors]
+   [[[0.55 0.85 1.0 0.9] [0.85 0.97 1.0 0.95] [1.0 1.0 1.0 0.9]]     ;; icy-blue (baseline)
+    [[1.0 0.85 0.3 0.9] [1.0 0.95 0.6 0.95] [1.0 1.0 0.9 0.85]]      ;; golden-sparkle
+    [[0.4 0.95 0.75 0.9] [0.75 1.0 0.9 0.95] [1.0 1.0 1.0 0.85]]     ;; mint-green
+    [[0.75 0.6 1.0 0.9] [0.9 0.8 1.0 0.95] [1.0 0.95 1.0 0.85]]]     ;; lavender
+
+   [:fx :burst :hit :colors]
+   [[[0.95 0.35 0.25 0.95] [1.0 0.62 0.22 0.9]]                      ;; red-orange (baseline)
+    [[0.75 0.1 0.15 0.95] [0.95 0.3 0.2 0.9]]                        ;; crimson-dark
+    [[0.9 0.15 0.55 0.95] [1.0 0.4 0.7 0.9]]                         ;; electric-magenta
+    [[1.0 0.55 0.05 0.95] [1.0 0.8 0.2 0.9]]]})                      ;; amber-warning
 
 (defn- bound-for [kp]
   (let [leaf (last kp)]
@@ -141,7 +168,13 @@
       (contains? bounds leaf) (get bounds leaf)
       :else nil)))
 
-(defn- categorical-path? [kp] (contains? categorical-choices (last kp)))
+(defn- categorical-path? [kp]
+  (or (contains? path-categorical-choices kp)
+      (contains? categorical-choices (last kp))))
+
+(defn- choices-for [kp]
+  (or (get path-categorical-choices kp)
+      (get categorical-choices (last kp))))
 
 (defn- clamp [[lo hi] v] (max lo (min hi v)))
 
@@ -167,15 +200,16 @@
 
   `rng` is an injected java.util.Random-like `(fn [] -> double in [0,1))` — pure/testable,
   no hidden System/currentTimeMillis seed (matches this repo's `qa_governor.ledger`
-  convention of injected non-deterministic inputs). For a categorical path (currently only
-  :wave — see `categorical-choices`), this picks a DIFFERENT choice than the current value
-  (never a no-op re-pick of the same wave) using the same `rng`, rather than a numeric walk."
+  convention of injected non-deterministic inputs). For a categorical path (:wave —
+  `categorical-choices`, or :colors — `path-categorical-choices`), this picks a DIFFERENT
+  choice than the current value (never a no-op re-pick) using the same `rng`, rather than a
+  numeric walk."
   [baseline-params rng & {:keys [step-frac] :or {step-frac 0.25}}]
   (into {}
         (map (fn [[kp v]]
                (cond
                  (categorical-path? kp)
-                 (let [choices (get categorical-choices (last kp))
+                 (let [choices (choices-for kp)
                        others (vec (remove #(= % v) choices))
                        idx (int (Math/floor (* (rng) (count others))))]
                    [kp (if (seq others) (nth others idx) v)])
