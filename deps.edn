@@ -6,4 +6,30 @@
            ;; clj-kondo as a Clojars lib (no Homebrew/system install needed).
            :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
                   :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
-                              "--fail-level" "error"]}}}
+                              "--fail-level" "error"]}
+           ;; スライムハント (Slime Hunt, ADR pending) authoring step: JVM-only, bakes
+           ;; public/games/slime-hunt/scene.edn from kami.isekai.chargen/monsters/status
+           ;; (character + slime composers, stat→speed derivation) plus this repo's own
+           ;; voxel-world/heightmap-color terrain kernel — a dev-only sibling dependency,
+           ;; same "zero-dep core, opt-in game/render tooling via alias" shape render-test
+           ;; already established (see bb.edn / README's Render-proof section). Needs a
+           ;; sibling checkout of kotoba-lang/kami-isekai-assets next to this repo.
+           :gen-scene {:extra-paths ["scripts"]
+                       :extra-deps {io.github.kotoba-lang/kami-isekai-assets
+                                    {:local/root "../kami-isekai-assets"}}
+                       :main-opts ["-m" "gen-scene"]}
+           ;; The playable game itself: cljs.main (plain `-co`/`-c`, no shadow-cljs/npm —
+           ;; same dev-only build shape kami-app-character-creator's `:cljs-app` alias
+           ;; uses) compiling dev/slime_hunt/game.cljs, which requires kotoba.engine-clj
+           ;; (logic.cljc → WASM, kotoba-lang/kami-engine's kami-engine-clj) and kami.host/
+           ;; scene2d/webgl/fsm/ui/input/audio (kotoba-lang/webgpu) — the exact harness
+           ;; gftdcojp/network-isekai's `isekai.game` already runs in production, trimmed to
+           ;; this game's own needs. Needs sibling checkouts of kotoba-lang/{webgpu,
+           ;; kami-engine/kami-engine-clj} next to this repo.
+           :cljs-game {:extra-paths ["dev"]
+                       :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
+                                    io.github.kotoba-lang/kami-webgpu
+                                    {:local/root "../webgpu"}
+                                    io.github.kotoba-lang/kami-engine-clj
+                                    {:local/root "../kami-engine/kami-engine-clj"}}
+                       :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}}}

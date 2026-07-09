@@ -57,11 +57,42 @@ webgpu,expr}`). Run with `bb render-test` (see `bb.edn`); see
 the cross-platform headless-Chromium resolution fix (`kotoba-lang/webgpu` PR #9's
 technique, reapplied inline since that PR isn't merged yet).
 
+## スライムハント (Slime Hunt) — a real, playable win/lose game
+
+`game.html` + `dev/slime_hunt/game.cljs` + `public/games/slime-hunt/{scene.edn,logic.cljc}`:
+a real-time dodge/collect arena, the first actual playable win/lose game to use this repo's
+`voxel-world`/`heightmap-color` terrain kernel for anything besides a standalone visualization.
+WASD/arrows move the player; dodge 3 elemental slimes (3 lives, drive's exact mechanic) while
+collecting all 8 glowing "kotodama orb" pickups. Same production-proven architecture as
+[gftdcojp/network-isekai](https://github.com/gftdcojp/network-isekai)'s live games (e.g. "KAMI
+Drive"): `logic.cljc` (a small guest-DSL, not full Clojure — see `kotoba-lang/kami-engine`'s
+`kami-engine-clj`) is compiled to real WASM bytes via `kotoba.engine-clj`, instantiated against
+`kami.host` (`kotoba-lang/webgpu`'s browser ECS/ABI), ticked every `requestAnimationFrame`, and
+rendered via `kami.scene2d` + `kami.webgl` (GPU-instanced 2D quads, WebGL2 — the SAME
+`kami.sprite-gpu` pipeline the render-proof above pixel-verifies, not Canvas2D). The player's
+visual + move-speed and the 3 slime variants are composed via `kotoba-lang/kami-isekai-assets`
+(`kami.isekai.chargen`/`monsters`/`status`), and the arena background is a static bake of this
+repo's own `terrain-height` + `heightmap-color` kernel — see `scripts/gen_scene.clj`, which
+regenerates `public/games/slime-hunt/scene.edn` from all of the above (nothing hand-drawn).
+
+Dev-only, needs sibling checkouts next to this repo (same layout the render-test above uses):
+`kotoba-lang/{webgpu,kami-isekai-assets,kami-engine}` — see `deps.edn`'s `:gen-scene`/
+`:cljs-game` aliases for exactly which ones each step needs.
+
+```bash
+bb slime-hunt-scene   # (re)bake scene.edn from the composers + terrain kernel
+bb slime-hunt-build   # compile dev/slime_hunt/game.cljs -> dev/out/game.js (cljs.main, no npm)
+python3 -m http.server 8931   # serve the repo root
+# open http://localhost:8931/game.html
+```
+
 ## Status
 
 Restored (scoped) — 12 `clojure -M:test` tests / 53 assertions, 0 failures (the
 original had no `#[test]`s in any of the 3 files; these provide coverage of the
-ported kernels/data), plus the render-test above (not part of `clojure -M:test`).
+ported kernels/data), plus the render-test above (not part of `clojure -M:test`) and
+the スライムハント playable game above (verified by real Playwright playthroughs — see
+this feature's PR description for the win-path and lose-path evidence).
 
 ## Develop
 
