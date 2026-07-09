@@ -300,11 +300,30 @@
    {:x 843.75, :y 843.75, :color [0.418 0.666 0.418]}]},
  :game/title "スライムハント — Slime Hunt",
  :audio
- {:pick {:wave "sine", :freq 660, :to 1180, :dur 0.11, :gain 0.15},
-  :hit {:wave "triangle", :freq 200, :to 65, :dur 0.17, :gain 0.22},
-  :victory {:wave "sine", :freq 523, :to 1046, :dur 0.5, :gain 0.18},
+ {:pick
+  {:wave "sine",
+   :freq 669,
+   :to 1180,
+   :dur 0.05,
+   :gain 0.17587883824968834},
+  :hit
+  {:wave "triangle",
+   :freq 538,
+   :to 65,
+   :dur 0.3976241986318142,
+   :gain 0.1427837408936326},
+  :victory
+  {:wave "sine",
+   :freq 538,
+   :to 1046,
+   :dur 0.6583787256902423,
+   :gain 0.1450890239667152},
   :gameover
-  {:wave "sawtooth", :freq 220, :to 55, :dur 0.55, :gain 0.16}},
+  {:wave "sawtooth",
+   :freq 80,
+   :to 55,
+   :dur 0.46850303705715374,
+   :gain 0.10441160186022216}},
  :input
  {:actions
   {:up #{"w" "ArrowUp" "W"},
@@ -312,22 +331,22 @@
    :left #{"ArrowLeft" "a" "A"},
    :right #{"d" "ArrowRight" "D"}}},
  :fx
- {:shake {:amp 14, :frames 12},
+ {:shake {:amp 13, :frames 13},
   :burst
   {:pick
-   {:n 10,
-    :spd 2.0,
-    :grav 0.1,
-    :life 22,
+   {:n 11,
+    :spd 1.6408090591640627,
+    :grav 0.12435160151651226,
+    :life 25,
     :size 5,
     :colors
     [[0.55 0.85 1.0 0.9] [0.85 0.97 1.0 0.95] [1.0 1.0 1.0 0.9]]},
    :hit
-   {:n 14,
-    :spd 2.6,
-    :grav 0.16,
-    :life 24,
-    :size 6,
+   {:n 6,
+    :spd 3.1124458378259967,
+    :grav 0.1505988454605255,
+    :life 14,
+    :size 7,
     :colors [[0.95 0.35 0.25 0.95] [1.0 0.62 0.22 0.9]]}}},
  :sprites
  {:player

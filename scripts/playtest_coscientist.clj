@@ -49,12 +49,16 @@
   --backend selects the scoring backend (default :auto):
     auto      — murakumo (see below) when MURAKUMO_CLAUDE_TOKEN is set, else the original
                 live-model/heuristic path (score-screenshot's own ANTHROPIC_API_KEY check).
-    murakumo  — forces kami-app-isekai.playtest.vision-score/structured-state-critique, a
-                TEXT-GROUNDED critic (never vision) over api.murakumo.cloud's
-                qwen-agentworld-35b-a3b (text-only model) — sends pixel-stats (computed
-                locally from the real screenshot bytes) + the actual captured game state
-                (driver.mjs's window.__slimeHunt* debug-hook reads, now attached to every
-                shot) as plain text, never an image block. Needs MURAKUMO_CLAUDE_TOKEN.
+    murakumo  — forces kami-app-isekai.playtest.vision-score/murakumo-critique, REAL VISION
+                as of 2026-07-09 over api.murakumo.cloud's qwen3.6-35b-a3b (confirmed
+                vision-capable, gftdcojp/local-murakumo PR #34) — sends the actual screenshot
+                as a base64 PNG image content block (same multimodal-message code the direct-
+                Anthropic path uses), with the captured game state (driver.mjs's
+                window.__slimeHunt* debug-hook reads) folded in as extra text context. Falls
+                back to the original TEXT-ONLY structured-state critic (pixel-stats + state,
+                never an image) ONLY if the vision reply fails to parse — a defensive path,
+                not the normal case; see vision-score's namespace docstring. Needs
+                MURAKUMO_CLAUDE_TOKEN.
     anthropic — forces the original score-screenshot path (live Claude vision model or the
                 offline pixel heuristic, per ANTHROPIC_API_KEY)."
   (:require [clojure.java.shell :as sh]
@@ -119,7 +123,8 @@
   the window.__slimeHunt* debug-hook read captured at the same instant as the screenshot —
   see driver.mjs's shoot(), added alongside this backend). `backend` (see -main docstring)
   picks which of vision-score's 3 backends actually does the scoring:
-    :murakumo  — structured-state-critique (pixel-stats + :state, TEXT only, never an image)
+    :murakumo  — murakumo-critique (REAL VISION as of 2026-07-09: the actual screenshot image,
+                 with pixel-stats + :state text fallback only on an unparseable vision reply)
     :anthropic — score-screenshot (the original live-vision-or-heuristic path, unchanged)
     :auto      — murakumo when available, else the same :anthropic path (backward-compatible
                  default: a checkout without MURAKUMO_CLAUDE_TOKEN behaves exactly as before
@@ -130,10 +135,10 @@
                (let [b64 (vs/file->b64 path)
                      moment (keyword name)]
                  [name (case backend
-                         :murakumo (vs/structured-state-critique b64 moment state)
+                         :murakumo (vs/murakumo-critique b64 moment state)
                          :anthropic (vs/score-screenshot b64 moment)
                          #_:auto (if (vs/murakumo-available?)
-                                   (vs/structured-state-critique b64 moment state)
+                                   (vs/murakumo-critique b64 moment state)
                                    (vs/score-screenshot b64 moment)))])))
         shots))
 
@@ -257,7 +262,7 @@
              "Generated " (java.time.Instant/now) " by `scripts/playtest_coscientist.clj`.\n\n"
              "Scoring backend: "
              (case backend
-               :murakumo "**murakumo structured-state critic** (api.murakumo.cloud / qwen-agentworld-35b-a3b — TEXT-ONLY model, sent pixel-stats + captured game state as plain text, NOT a screenshot image; see `kami-app-isekai.playtest.vision-score/structured-state-critique`)"
+               :murakumo "**murakumo vision critic** (api.murakumo.cloud / qwen3.6-35b-a3b — confirmed vision-capable as of 2026-07-09, sent the actual screenshot as an image content block, with pixel-stats + captured game state as fallback-only text if the vision reply failed to parse; see `kami-app-isekai.playtest.vision-score/murakumo-critique`)"
                :anthropic (if anthropic-live? "**live Claude vision model** (ANTHROPIC_API_KEY set)"
                               "**offline pixel heuristic** (ANTHROPIC_API_KEY unset — see `kami-app-isekai.playtest.vision-score/heuristic-score`)")
                (str backend))
