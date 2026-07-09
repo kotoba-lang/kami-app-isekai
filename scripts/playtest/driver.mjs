@@ -198,7 +198,14 @@ async function waitForPhase(page, phase, timeoutMs = 10000) {
 async function shoot(page, outDir, name, shots) {
   const file = path.join(outDir, `${name}.png`);
   await page.screenshot({ path: file });
-  shots.push({ name, path: file });
+  // Capture the SAME window.__slimeHunt* debug-hook state readState() already reads for the
+  // controller, at this exact screenshot instant — the "actual game state" half of the
+  // murakumo structured-state critic's prompt (kami-app-isekai.playtest.vision-score/
+  // structured-state-critique). `state` here is the readState() shape: {phase status snap
+  // globals}; JSON.stringify'd through this script's own summary line, so the CLJ side gets
+  // it as a plain EDN-able (keywordized) map with no extra wiring.
+  const state = await readState(page);
+  shots.push({ name, path: file, state });
   return file;
 }
 

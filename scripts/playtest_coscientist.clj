@@ -40,11 +40,23 @@
 
   Usage (from the kami-app-isekai repo root):
     clojure -M:playtest -m playtest-coscientist [--rounds N] [--out-dir DIR]
-                                                 [--report PATH] [--skip-build]
+                                                 [--report PATH] [--skip-build] [--backend B]
   Default N=3 (override with --rounds; the task explicitly asks for a small N since every
   round is a real page load + playthrough, not instant — a verification run used --rounds 1).
   ANTHROPIC_API_KEY unset -> every round's scoring runs through the offline pixel heuristic
-  (kami-app-isekai.playtest.vision-score/heuristic-score) automatically; no separate flag."
+  (kami-app-isekai.playtest.vision-score/heuristic-score) automatically; no separate flag.
+
+  --backend selects the scoring backend (default :auto):
+    auto      — murakumo (see below) when MURAKUMO_CLAUDE_TOKEN is set, else the original
+                live-model/heuristic path (score-screenshot's own ANTHROPIC_API_KEY check).
+    murakumo  — forces kami-app-isekai.playtest.vision-score/structured-state-critique, a
+                TEXT-GROUNDED critic (never vision) over api.murakumo.cloud's
+                qwen-agentworld-35b-a3b (text-only model) — sends pixel-stats (computed
+                locally from the real screenshot bytes) + the actual captured game state
+                (driver.mjs's window.__slimeHunt* debug-hook reads, now attached to every
+                shot) as plain text, never an image block. Needs MURAKUMO_CLAUDE_TOKEN.
+    anthropic — forces the original score-screenshot path (live Claude vision model or the
+                offline pixel heuristic, per ANTHROPIC_API_KEY)."
   (:require [clojure.java.shell :as sh]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -60,7 +72,7 @@
 (defn- parse-args [argv]
   (loop [args argv out {:rounds 3 :out-dir "dev/out/playtest-screenshots"
                          :report "docs/playtest-coscientist/iteration-01.md"
-                         :skip-build false}]
+                         :skip-build false :backend :auto}]
     (if (empty? args)
       out
       (let [[a & more] args]
@@ -69,6 +81,7 @@
           "--out-dir" (recur (rest more) (assoc out :out-dir (first more)))
           "--report" (recur (rest more) (assoc out :report (first more)))
           "--skip-build" (recur more (assoc out :skip-build true))
+          "--backend" (recur (rest more) (assoc out :backend (keyword (first more))))
           (recur more out))))))
 
 ;; ───────────────────────── driver.mjs invocation ─────────────────────────
@@ -102,11 +115,26 @@
 (def ^:private axes [:juice :feel :bugs :clarity])
 
 (defn- score-shots
-  "{shot-name -> score-map} for every {:name :path} driver.mjs produced."
-  [shots]
+  "{shot-name -> score-map} for every {:name :path :state} driver.mjs produced (:state is
+  the window.__slimeHunt* debug-hook read captured at the same instant as the screenshot —
+  see driver.mjs's shoot(), added alongside this backend). `backend` (see -main docstring)
+  picks which of vision-score's 3 backends actually does the scoring:
+    :murakumo  — structured-state-critique (pixel-stats + :state, TEXT only, never an image)
+    :anthropic — score-screenshot (the original live-vision-or-heuristic path, unchanged)
+    :auto      — murakumo when available, else the same :anthropic path (backward-compatible
+                 default: a checkout without MURAKUMO_CLAUDE_TOKEN behaves exactly as before
+                 this backend was added)."
+  [shots backend]
   (into {}
-        (map (fn [{:keys [name path]}]
-               [name (vs/score-screenshot (vs/file->b64 path) (keyword name))]))
+        (map (fn [{:keys [name path state]}]
+               (let [b64 (vs/file->b64 path)
+                     moment (keyword name)]
+                 [name (case backend
+                         :murakumo (vs/structured-state-critique b64 moment state)
+                         :anthropic (vs/score-screenshot b64 moment)
+                         #_:auto (if (vs/murakumo-available?)
+                                   (vs/structured-state-critique b64 moment state)
+                                   (vs/score-screenshot b64 moment)))])))
         shots))
 
 (defn- aggregate
@@ -177,11 +205,11 @@
   "Writes `scene` to scene-path, plays it (driver.mjs), scores every screenshot, evaluates
   through the governor, records the round in `ledger`. Returns
   {:label :scene :agg :total :grade :verdict :driver :scores :ledger}."
-  [ledger label scene out-dir]
+  [ledger label scene out-dir backend]
   (println (str "[playtest-coscientist] round " label " -> writing scene.edn, playing…"))
   (tune/write-scene! scene-path scene)
   (let [driver (run-driver! (str out-dir "/" label))
-        scores (score-shots (:shots driver))
+        scores (score-shots (:shots driver) backend)
         agg (aggregate scores)
         total (rubric/weighted-score playtest-rubric agg)
         grade (rubric/grade total)
@@ -216,7 +244,7 @@
                  (when (not= ov nv) (str (str/join " " (map name kp)) ": " ov " -> " nv)))))
        (str/join "\n")))
 
-(defn- write-report! [path {:keys [rounds baseline winner reverted? anthropic-live?]}]
+(defn- write-report! [path {:keys [rounds baseline winner reverted? anthropic-live? backend]}]
   (io/make-parents path)
   (spit path
         (str "# Playtest Co-Scientist — iteration 01 (スライムハント / Slime Hunt)\n\n"
@@ -227,8 +255,13 @@
              "following the ai-gftd-animeka coscientist pattern (generate -> score -> keep-winner) "
              "and isekai.ux.coscientist's propose/evaluate/iterate CLI shape.\n\n"
              "Generated " (java.time.Instant/now) " by `scripts/playtest_coscientist.clj`.\n\n"
-             "Vision scoring path: " (if anthropic-live? "**live Claude vision model** (ANTHROPIC_API_KEY set)"
-                                          "**offline pixel heuristic** (ANTHROPIC_API_KEY unset — see `kami-app-isekai.playtest.vision-score/heuristic-score`)") "\n\n"
+             "Scoring backend: "
+             (case backend
+               :murakumo "**murakumo structured-state critic** (api.murakumo.cloud / qwen-agentworld-35b-a3b — TEXT-ONLY model, sent pixel-stats + captured game state as plain text, NOT a screenshot image; see `kami-app-isekai.playtest.vision-score/structured-state-critique`)"
+               :anthropic (if anthropic-live? "**live Claude vision model** (ANTHROPIC_API_KEY set)"
+                              "**offline pixel heuristic** (ANTHROPIC_API_KEY unset — see `kami-app-isekai.playtest.vision-score/heuristic-score`)")
+               (str backend))
+             "\n\n"
              "## ★ Measured baseline\n\n"
              "- total=" (format "%.1f" (double (:total baseline))) " grade=" (name (:grade baseline))
              " verdict=" (if (get-in baseline [:verdict :approved-overall?]) "approved" "rejected") "\n"
@@ -281,16 +314,27 @@
 
 ;; ───────────────────────── main ─────────────────────────
 
+(defn- resolve-backend
+  "Turns --backend :auto into the concrete backend actually used this run (for the report),
+  same semantics as score-shots' :auto branch."
+  [backend]
+  (if (= backend :auto)
+    (if (vs/murakumo-available?) :murakumo :anthropic)
+    backend))
+
 (defn -main [& argv]
-  (let [{:keys [rounds out-dir report skip-build]} (parse-args argv)
+  (let [{:keys [rounds out-dir report skip-build backend]} (parse-args argv)
         _ (ensure-game-built! skip-build)
         original-bytes (slurp scene-path)
         baseline-scene (tune/read-scene scene-path)
         rng (let [r (java.util.Random.)] (fn [] (.nextDouble r)))
+        resolved-backend (resolve-backend backend)
         anthropic-live? (some? (System/getenv "ANTHROPIC_API_KEY"))]
+    (println (str "[playtest-coscientist] scoring backend: " (name resolved-backend)
+                   (when (= backend :auto) " (auto)")))
     (try
       (let [ledger0 ledger/empty-ledger
-            baseline (run-round! ledger0 "baseline" baseline-scene out-dir)
+            baseline (run-round! ledger0 "baseline" baseline-scene out-dir resolved-backend)
             baseline-params (tune/extract baseline-scene)
             [rounds* ledgerN]
             (loop [i 1 acc [] ledg (:ledger baseline)]
@@ -298,7 +342,7 @@
                 [acc ledg]
                 (let [cand-params (tune/perturb baseline-params rng)
                       cand-scene (tune/apply-params baseline-scene cand-params)
-                      r (run-round! ledg (str "gen-" i) cand-scene out-dir)]
+                      r (run-round! ledg (str "gen-" i) cand-scene out-dir resolved-backend)]
                   (recur (inc i) (conj acc r) (:ledger r)))))
             approved-better (->> rounds*
                                   (filter #(get-in % [:verdict :approved-overall?]))
@@ -312,7 +356,8 @@
           (do (spit scene-path original-bytes)
               (println "[playtest-coscientist] no approved candidate beat the baseline — scene.edn restored to original")))
         (write-report! report {:rounds rounds* :baseline baseline :winner approved-better
-                                :reverted? (nil? approved-better) :anthropic-live? anthropic-live?})
+                                :reverted? (nil? approved-better) :anthropic-live? anthropic-live?
+                                :backend resolved-backend})
         (println (str "[playtest-coscientist] report written to " report))
         (println (str "[playtest-coscientist] ledger entries: " (count ledgerN)))
         (when (nil? approved-better) (println "[playtest-coscientist] done (reverted to baseline)"))
