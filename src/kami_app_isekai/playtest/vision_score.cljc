@@ -57,7 +57,8 @@
   in-process 1Password shellout; export `MURAKUMO_CLAUDE_TOKEN=$(op item get
   \"gftd.murakumo/ANTHROPIC_PROXY_TOKEN\" --vault gftdcojp --fields credential --reveal)`
   before invoking this script if sourcing from 1Password)."
-  (:require [langchain.jvm :as jvm]
+  (:require [clojure.string :as str]
+            [langchain.jvm :as jvm]
             [langchain.model :as model]
             #?(:clj [clojure.java.io :as io])
             #?(:clj [org.httpkit.client :as http])))
@@ -120,14 +121,58 @@
        "quality. Most real-world prototypes SHOULD score low under this bar; if every axis "
        "comes back above 60, you are almost certainly being too lenient."))
 
+;; 2026-07-09 kaizen pass: every critique now speaks in 3 distinct "game director" persona
+;; LENSES — clearly-labeled stylistic archetypes inspired by well-known design philosophies
+;; (not literal quotes/impersonation of a real person's actual opinion), so a finding doesn't
+;; get flattened into one generic "QA critic" sentence. Kept identical to the network-isekai
+;; sibling's director-personas constant (same "pragmatic sibling duplicate" convention this
+;; whole murakumo-backend section already follows). One API call still returns all 3.
+(def ^:private director-personas
+  (str "Write your critique as THREE separate short notes, each in a clearly-labeled "
+       "persona lens (a stylistic archetype inspired by a well-known game design "
+       "philosophy — not a literal quote from that person, just their known focus): "
+       "\"miyamoto\" = 宮本茂-style — obsesses over GAME FEEL: is the core input-to-action "
+       "loop tactile and satisfying to repeat, or does it feel stiff/flat/unresponsive?; "
+       "\"sakurai\" = 桜井政博-style — obsesses over ACCESSIBILITY & FAIRNESS: would a brand "
+       "new player understand what to do within seconds, and does the game communicate its "
+       "own rules/state honestly?; \"aonuma\" = 青沼英二-style — obsesses over PRESENTATION "
+       "& SENSE OF PLACE: does this look like a considered, inhabited world/screen, or like "
+       "an unfinished tech demo/dev tool? Each persona should be HARSH and SPECIFIC to what "
+       "is actually visible — no persona should just restate the same generic sentence with "
+       "different framing."))
+
+(def ^:private persona-labels
+  {:miyamoto "宮本茂-style (game feel)" :sakurai "桜井政博-style (accessibility/fairness)"
+   :aonuma "青沼英二-style (presentation/sense of place)"})
+
+(defn- fmt-personas
+  "{:miyamoto \"...\" :sakurai \"...\" :aonuma \"...\"} -> one joined multi-line string, so
+  every existing :notes consumer (report formatting, qa-governor's contradiction-check regex
+  over evidence text, murakumo-critique's fallback-prefix logic) keeps working unmodified."
+  [personas]
+  (->> [:miyamoto :sakurai :aonuma]
+       (keep (fn [k] (when-let [note (get personas k)] (str "[" (get persona-labels k) "] " note))))
+       (str/join " / ")))
+
+(defn- attach-personas
+  "Raw parsed reply (has :personas, no :notes) -> same map with :notes synthesized via
+  fmt-personas AND :personas kept as-is for callers that want the 3 notes separately."
+  [parsed]
+  (let [personas (:personas parsed)]
+    (-> parsed
+        (assoc :notes (if (seq personas) (fmt-personas personas) "(no persona notes returned)"))
+        (assoc :personas personas))))
+
 (defn- prompt [moment]
   (str "You are QA-reviewing one screenshot from a real-time 2D dodge/collect arena game "
        "(\"スライムハント\" / Slime Hunt). This screenshot was captured at the moment: "
        (name moment) ". " nintendo-calibration " Score it 0-100 on each of these 4 axes — "
-       axis-doc " "
+       axis-doc " " director-personas " "
        "Reply with ONLY a JSON object, no prose outside it: "
        "{\"juice\": <0-100 integer>, \"feel\": <0-100 integer>, \"bugs\": <0-100 integer>, "
-       "\"clarity\": <0-100 integer>, \"notes\": \"<one or two sentence critique>\"}."))
+       "\"clarity\": <0-100 integer>, \"personas\": {\"miyamoto\": \"<1-2 sentence harsh "
+       "critique>\", \"sakurai\": \"<1-2 sentence harsh critique>\", \"aonuma\": \"<1-2 "
+       "sentence harsh critique>\"}}."))
 
 ;; ───────────────────────── offline heuristic (mock/degrade path) ─────────────────────────
 ;; JVM-only (javax.imageio / java.awt.image): this whole feature is a JVM CLI tool (see
@@ -221,12 +266,12 @@
   ([image-b64 moment] (score-screenshot image-b64 moment #?(:clj (live-model) :cljs nil)))
   ([image-b64 moment m]
    (if m
-     (or (some-> (jvm/vision-json m (prompt moment) image-b64) (assoc :mock false :parsed true))
-         {:juice nil :feel nil :bugs nil :clarity nil
+     (or (some-> (jvm/vision-json m (prompt moment) image-b64) attach-personas (assoc :mock false :parsed true))
+         {:juice nil :feel nil :bugs nil :clarity nil :personas nil
           :notes "live vision model reply did not parse as structured JSON"
           :mock false :parsed false})
      #?(:clj (heuristic-score image-b64 moment)
-        :cljs {:juice nil :feel nil :bugs nil :clarity nil
+        :cljs {:juice nil :feel nil :bugs nil :clarity nil :personas nil
                :notes "no vision path available on this platform (JVM-only feature)"
                :mock true :parsed false}))))
 
@@ -365,9 +410,12 @@
           (fmt-game-state game-state) "\n\n"
           nintendo-calibration "\n\n"
           "Using ONLY this combined evidence, score 0-100 on each of these 4 axes — " axis-doc " "
+          director-personas " "
           "Reply with ONLY a JSON object, no prose outside it: "
           "{\"juice\": <0-100 integer>, \"feel\": <0-100 integer>, \"bugs\": <0-100 integer>, "
-          "\"clarity\": <0-100 integer>, \"notes\": \"<one or two sentence critique>\"}.")))
+          "\"clarity\": <0-100 integer>, \"personas\": {\"miyamoto\": \"<1-2 sentence harsh "
+          "critique>\", \"sakurai\": \"<1-2 sentence harsh critique>\", \"aonuma\": \"<1-2 "
+          "sentence harsh critique>\"}}.")))
 
 #?(:clj
    (defn structured-state-critique
@@ -394,7 +442,7 @@
      ([image-b64 moment game-state] (structured-state-critique image-b64 moment game-state (murakumo-critic-model)))
      ([image-b64 moment game-state m]
       (if-not m
-        {:juice nil :feel nil :bugs nil :clarity nil
+        {:juice nil :feel nil :bugs nil :clarity nil :personas nil
          :notes "murakumo backend unavailable (MURAKUMO_CLAUDE_TOKEN unset)"
          :mock true :parsed false :backend :murakumo}
         (try
@@ -402,12 +450,12 @@
                 prompt-text (structured-state-prompt moment stats game-state)
                 reply (retry-transient #(jvm/complete-json structured-state-system-prompt prompt-text m)
                                         murakumo-retry-attempts murakumo-retry-delay-ms)]
-            (or (some-> reply (assoc :mock false :parsed true :backend :murakumo))
-                {:juice nil :feel nil :bugs nil :clarity nil
+            (or (some-> reply attach-personas (assoc :mock false :parsed true :backend :murakumo))
+                {:juice nil :feel nil :bugs nil :clarity nil :personas nil
                  :notes "murakumo reply did not parse as structured JSON"
                  :mock false :parsed false :backend :murakumo}))
           (catch Exception e
-            {:juice nil :feel nil :bugs nil :clarity nil
+            {:juice nil :feel nil :bugs nil :clarity nil :personas nil
              :notes (str "murakumo text-only call failed after " (inc murakumo-retry-attempts)
                          " attempt(s): " (.getMessage e))
              :mock false :parsed false :backend :murakumo}))))))
@@ -454,19 +502,19 @@
      ([image-b64 moment game-state] (murakumo-vision-critique image-b64 moment game-state (murakumo-critic-model)))
      ([image-b64 moment game-state m]
       (if-not m
-        {:juice nil :feel nil :bugs nil :clarity nil
+        {:juice nil :feel nil :bugs nil :clarity nil :personas nil
          :notes "murakumo backend unavailable (MURAKUMO_CLAUDE_TOKEN unset)"
          :mock true :parsed false :backend :murakumo}
         (try
           (let [reply (retry-transient
                        #(jvm/vision-json m (vision-prompt-with-state moment game-state) image-b64)
                        murakumo-retry-attempts murakumo-retry-delay-ms)]
-            (or (some-> reply (assoc :mock false :parsed true :backend :murakumo))
-                {:juice nil :feel nil :bugs nil :clarity nil
+            (or (some-> reply attach-personas (assoc :mock false :parsed true :backend :murakumo))
+                {:juice nil :feel nil :bugs nil :clarity nil :personas nil
                  :notes "murakumo vision reply did not parse as structured JSON"
                  :mock false :parsed false :backend :murakumo}))
           (catch Exception e
-            {:juice nil :feel nil :bugs nil :clarity nil
+            {:juice nil :feel nil :bugs nil :clarity nil :personas nil
              :notes (str "murakumo vision call failed after " (inc murakumo-retry-attempts)
                          " attempt(s): " (.getMessage e))
              :mock false :parsed false :backend :murakumo}))))))
