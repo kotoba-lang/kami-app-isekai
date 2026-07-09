@@ -32,4 +32,32 @@
                                     {:local/root "../webgpu"}
                                     io.github.kotoba-lang/kami-engine-clj
                                     {:local/root "../kami-engine/kami-engine-clj"}}
-                       :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}}}
+                       :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}
+           ;; Playtest Co-Scientist (scripts/playtest_coscientist.clj + src/kami_app_isekai/
+           ;; playtest/{vision_score,tuning}.cljc): JVM-only, generates+plays+scores+evolves
+           ;; スライムハント's tunable "juice" params (see scripts/playtest_coscientist.clj
+           ;; docstring). Needs sibling checkouts of kotoba-lang/{langchain,qa-governor} next
+           ;; to this repo (same west-manifest sibling-checkout convention as :gen-scene/
+           ;; :cljs-game above) — qa-governor's own deps.edn additionally needs a sibling
+           ;; checkout of com-junkawasaki/langgraph-clj next to ITS location (see qa-governor's
+           ;; deps.edn comment). http-kit/jsonista are the JVM host-fn capabilities
+           ;; langchain.jvm's :clj branch needs injected (langchain-clj itself ships zero
+           ;; third-party runtime deps by design, ADR-0001 in that repo) — same convention
+           ;; mangaka.llm/kotoba-lang/langchain's own :test alias already uses.
+           :playtest {:extra-paths ["scripts"]
+                      :extra-deps {io.github.kotoba-lang/langchain
+                                   {:local/root "../langchain"}
+                                   io.github.kotoba-lang/qa-governor
+                                   {:local/root "../qa-governor"}
+                                   http-kit/http-kit {:mvn/version "2.8.0"}
+                                   metosin/jsonista {:mvn/version "0.3.11"}}
+                      ;; qa-governor's own langgraph-clj dep transitively drags in a
+                      ;; git/sha-pinned kotoba-lang/langchain; force it back to the same
+                      ;; local sibling checkout used directly above (qa-governor's own :dev
+                      ;; alias demonstrates the identical override for the identical reason).
+                      ;; No :main-opts here (deliberately) — `clojure -M:playtest -e …` for
+                      ;; interactive/test use and `clojure -M:playtest -m playtest-coscientist
+                      ;; …` (scripts/playtest_coscientist.clj) for the CLI both need to work;
+                      ;; baking `-m playtest-coscientist` into :main-opts would hijack -e.
+                      :override-deps {io.github.kotoba-lang/langchain
+                                       {:local/root "../langchain"}}}}}
