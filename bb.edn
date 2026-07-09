@@ -18,4 +18,21 @@
    :task (babashka.process/shell
           {:dir "../webgpu"}
           "bb" "--classpath" "../kami-app-isekai/src:../kami-app-isekai/render-test:src:../expr/src"
-          "-f" (str (System/getProperty "user.dir") "/render-test/render_pixel_test.clj"))}}}
+          "-f" (str (System/getProperty "user.dir") "/render-test/render_pixel_test.clj"))}
+
+  ;; スライムハント (Slime Hunt) — the playable game (ADR pending). Two steps, both dev-only
+  ;; (like render-test above, needs sibling checkouts next to this repo — see deps.edn's
+  ;; :gen-scene/:cljs-game aliases for exactly which ones):
+  ;;   bb slime-hunt-scene  — (re)bake public/games/slime-hunt/scene.edn from the composers
+  ;;   bb slime-hunt-build  — compile dev/slime_hunt/game.cljs -> dev/out/game.js
+  ;; then serve the repo root (e.g. `python3 -m http.server 8931`) and open game.html.
+  slime-hunt-scene
+  {:doc "Bake public/games/slime-hunt/scene.edn from kami.isekai.chargen/monsters/status +
+         this repo's own voxel-world/heightmap-color terrain kernel (scripts/gen_scene.clj)."
+   :task (babashka.process/shell "clojure" "-M:gen-scene")}
+
+  slime-hunt-build
+  {:doc "Compile dev/slime_hunt/game.cljs -> dev/out/game.js (plain cljs.main, :simple
+         optimizations, no shadow-cljs/npm — same dev-only build shape kami-app-character-
+         creator's :cljs-app alias uses)."
+   :task (babashka.process/shell "clojure" "-M:cljs-game")}}}
