@@ -9,6 +9,16 @@
     :fx :shake                           — screen-shake amp/frames on hit
     :audio :pick/:hit/:victory/:gameover — each {:wave :freq :to :dur :gain}
 
+  2026-07-09 kaizen: :wave (the oscillator-shape enum) is now ALSO tuned, as a small
+  CATEGORICAL choice set (sine/square/sawtooth/triangle — the 4 real Web Audio
+  OscillatorNode types every :wave value in this file already uses) rather than a numeric
+  random-walk — see `categorical-choices`/`perturb` below. :colors (rgba palettes) remains
+  deliberately untouched: a whole palette isn't a single categorical value the way :wave is,
+  and a naive per-channel numeric walk on it would drift into muddy/clashing colors rather
+  than a meaningfully different but still coherent palette — a real future pass here would
+  need a small curated PALETTE choice set (several hand-picked coherent palettes to choose
+  between), not a per-number perturbation, so it's left out of this pass too.
+
   Deliberately DOES NOT touch :world/:flow/:input/logic.cljc gameplay speeds/ranges/layout —
   those need a WASM recompile and/or change win/lose balance, explicitly out of scope for
   this pass (see scripts/playtest_coscientist.clj docstring; a documented follow-up, not
@@ -53,14 +63,14 @@
    [:fx :burst :pick :life] [:fx :burst :pick :size]
    [:fx :burst :hit :n] [:fx :burst :hit :spd] [:fx :burst :hit :grav]
    [:fx :burst :hit :life] [:fx :burst :hit :size]
-   [:audio :pick :freq] [:audio :pick :to] [:audio :pick :dur] [:audio :pick :gain]
-   [:audio :hit :freq] [:audio :hit :to] [:audio :hit :dur] [:audio :hit :gain]
-   [:audio :victory :freq] [:audio :victory :to] [:audio :victory :dur] [:audio :victory :gain]
-   [:audio :gameover :freq] [:audio :gameover :to] [:audio :gameover :dur] [:audio :gameover :gain]])
+   [:audio :pick :freq] [:audio :pick :to] [:audio :pick :dur] [:audio :pick :gain] [:audio :pick :wave]
+   [:audio :hit :freq] [:audio :hit :to] [:audio :hit :dur] [:audio :hit :gain] [:audio :hit :wave]
+   [:audio :victory :freq] [:audio :victory :to] [:audio :victory :dur] [:audio :victory :gain] [:audio :victory :wave]
+   [:audio :gameover :freq] [:audio :gameover :to] [:audio :gameover :dur] [:audio :gameover :gain] [:audio :gameover :wave]])
 
 (defn extract
-  "scene -> {keypath value} over tunable-paths only (colors/:wave are left alone — see
-  perturb's docstring for why)."
+  "scene -> {keypath value} over tunable-paths only (:colors is left alone — see the
+  namespace docstring for why; :wave IS included, tuned categorically — see perturb)."
   [scene]
   (into {} (map (fn [kp] [kp (get-in scene kp)])) tunable-paths))
 
@@ -110,14 +120,18 @@
 ;;   :audio :gain (0-1 linear)[0.05, 0.5]— below 0.05 is inaudible, above 0.5 risks clipping/
 ;;                                         being jarringly loud next to the other cues (all
 ;;                                         current gains are 0.15-0.22).
-;; :wave (oscillator shape, a string enum) and :colors (rgba vectors) are deliberately NOT
-;; perturbed — they're categorical/aesthetic choices, not a continuous knob a numeric
-;; random-walk can meaningfully "improve"; a future pass could treat :wave as a small
-;; categorical choice set, out of scope here.
 (def bounds
   {:n [3 40] :spd [0.5 6.0] :grav [0.0 0.4] :life [8 60] :size [2 14]
    :shake-amp [0 30] :shake-frames [4 24]
    :freq [80 2000] :dur [0.05 1.0] :gain [0.05 0.5]})
+
+;; :wave (oscillator shape) — 2026-07-09: a small CATEGORICAL choice set, not a numeric
+;; range. These are the 4 real Web Audio `OscillatorNode.type` values (`kami.audio`'s
+;; synthesized sfx bank plays these directly, no others are valid) — every :wave value
+;; already in scene.edn is one of these 4, so perturbing within this set can never produce
+;; an invalid oscillator type.
+(def categorical-choices
+  {:wave ["sine" "square" "sawtooth" "triangle"]})
 
 (defn- bound-for [kp]
   (let [leaf (last kp)]
@@ -126,6 +140,8 @@
       (= kp [:fx :shake :frames]) (:shake-frames bounds)
       (contains? bounds leaf) (get bounds leaf)
       :else nil)))
+
+(defn- categorical-path? [kp] (contains? categorical-choices (last kp)))
 
 (defn- clamp [[lo hi] v] (max lo (min hi v)))
 
@@ -151,21 +167,31 @@
 
   `rng` is an injected java.util.Random-like `(fn [] -> double in [0,1))` — pure/testable,
   no hidden System/currentTimeMillis seed (matches this repo's `qa_governor.ledger`
-  convention of injected non-deterministic inputs)."
+  convention of injected non-deterministic inputs). For a categorical path (currently only
+  :wave — see `categorical-choices`), this picks a DIFFERENT choice than the current value
+  (never a no-op re-pick of the same wave) using the same `rng`, rather than a numeric walk."
   [baseline-params rng & {:keys [step-frac] :or {step-frac 0.25}}]
   (into {}
         (map (fn [[kp v]]
-               (let [b (bound-for kp)]
-                 (if (nil? b)
-                   [kp v]
-                   (let [[lo hi] b
-                         span (- hi lo)
-                         delta (* span step-frac (- (* 2.0 (rng)) 1.0)) ;; in [-span*step-frac, +span*step-frac]
-                         raw (+ v delta)
-                         clamped (clamp b raw)
-                         out (if (integral-path? kp) (long (Math/round (double clamped))) (double clamped))]
-                     [kp out])))))
-        baseline-params))
+               (cond
+                 (categorical-path? kp)
+                 (let [choices (get categorical-choices (last kp))
+                       others (vec (remove #(= % v) choices))
+                       idx (int (Math/floor (* (rng) (count others))))]
+                   [kp (if (seq others) (nth others idx) v)])
+
+                 :else
+                 (let [b (bound-for kp)]
+                   (if (nil? b)
+                     [kp v]
+                     (let [[lo hi] b
+                           span (- hi lo)
+                           delta (* span step-frac (- (* 2.0 (rng)) 1.0)) ;; in [-span*step-frac, +span*step-frac]
+                           raw (+ v delta)
+                           clamped (clamp b raw)
+                           out (if (integral-path? kp) (long (Math/round (double clamped))) (double clamped))]
+                       [kp out])))))
+        baseline-params)))
 
 (defn candidate-scene
   "baseline scene + a freshly perturbed params map -> a new scene (baseline untouched)."
