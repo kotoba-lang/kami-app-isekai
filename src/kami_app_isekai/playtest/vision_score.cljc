@@ -102,10 +102,29 @@
        "clarity = does this single screenshot legibly communicate what just happened "
        "(a pickup / a hit / victory / game-over) to someone who only sees this one frame?"))
 
+;; 2026-07-09: calibrated against real, published, first-party Nintendo titles (Mario,
+;; Zelda, Kirby, Splatoon, Animal Crossing, etc.) instead of an ungrounded 0-100 scale —
+;; LLM judges default to lenient/encouraging scoring, so this explicitly overrides that
+;; instinct. Reused verbatim by both `prompt` (real vision) and `structured-state-prompt`
+;; (text fallback) below.
+(def ^:private nintendo-calibration
+  (str "CALIBRATION — score relative to the polish bar of an actual SHIPPED, first-party "
+       "Nintendo game (Mario, Zelda, Kirby, Splatoon, Animal Crossing, etc.) that a player "
+       "paid full price for on a real console. Be harsh, not encouraging: reserve 90-100 "
+       "for something indistinguishable from that shipped, professional polish level; a "
+       "competent-but-unremarkable indie prototype belongs in the 25-45 range, NOT 70+; "
+       "anything that looks like an early build, a game jam entry, or programmer-art "
+       "placeholder should score below 25. Do not grade on a curve, do not reward effort "
+       "or good intentions, do not soften the score because this is a small/solo/prototype "
+       "project — judge only what is actually visible against real Nintendo shipping "
+       "quality. Most real-world prototypes SHOULD score low under this bar; if every axis "
+       "comes back above 60, you are almost certainly being too lenient."))
+
 (defn- prompt [moment]
   (str "You are QA-reviewing one screenshot from a real-time 2D dodge/collect arena game "
        "(\"スライムハント\" / Slime Hunt). This screenshot was captured at the moment: "
-       (name moment) ". Score it 0-100 on each of these 4 axes — " axis-doc " "
+       (name moment) ". " nintendo-calibration " Score it 0-100 on each of these 4 axes — "
+       axis-doc " "
        "Reply with ONLY a JSON object, no prose outside it: "
        "{\"juice\": <0-100 integer>, \"feel\": <0-100 integer>, \"bugs\": <0-100 integer>, "
        "\"clarity\": <0-100 integer>, \"notes\": \"<one or two sentence critique>\"}."))
@@ -344,6 +363,7 @@
           (fmt-pixel-stats stats) "\n\n"
           "Game state (captured via the game's own debug hooks at this exact moment): "
           (fmt-game-state game-state) "\n\n"
+          nintendo-calibration "\n\n"
           "Using ONLY this combined evidence, score 0-100 on each of these 4 axes — " axis-doc " "
           "Reply with ONLY a JSON object, no prose outside it: "
           "{\"juice\": <0-100 integer>, \"feel\": <0-100 integer>, \"bugs\": <0-100 integer>, "
