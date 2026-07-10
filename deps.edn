@@ -21,17 +21,17 @@
            ;; The playable game itself: cljs.main (plain `-co`/`-c`, no shadow-cljs/npm —
            ;; same dev-only build shape kami-app-character-creator's `:cljs-app` alias
            ;; uses) compiling dev/slime_hunt/game.cljs, which requires kotoba.engine-clj
-           ;; (logic.cljc → WASM, kotoba-lang/kami-engine's kami-engine-clj) and kami.host/
-           ;; scene2d/webgl/fsm/ui/input/audio (kotoba-lang/webgpu) — the exact harness
+           ;; (logic.cljc → WASM, kotoba-lang/kami-engine-clj (standalone SSoT)) and kami.host/input/ui/audio (kotoba-lang/host) +
+           ;; scene2d/webgl/fsm (siblings; webgpu is the WebGPU executor) — the exact harness
            ;; gftdcojp/network-isekai's `isekai.game` already runs in production, trimmed to
            ;; this game's own needs. Needs sibling checkouts of kotoba-lang/{webgpu,
-           ;; kami-engine/kami-engine-clj} next to this repo.
+           ;; kami-engine-clj} next to this repo.
            :cljs-game {:extra-paths ["dev"]
                        :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
                                     io.github.kotoba-lang/kami-webgpu
                                     {:local/root "../webgpu"}
                                     io.github.kotoba-lang/kami-engine-clj
-                                    {:local/root "../kami-engine/kami-engine-clj"}}
+                                    {:local/root "../kami-engine-clj"}}
                        :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}
            ;; Playtest Co-Scientist (scripts/playtest_coscientist.clj + src/kami_app_isekai/
            ;; playtest/{vision_score,tuning}.cljc): JVM-only, generates+plays+scores+evolves
