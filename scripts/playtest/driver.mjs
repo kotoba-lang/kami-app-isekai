@@ -197,7 +197,12 @@ async function waitForPhase(page, phase, timeoutMs = 10000) {
 
 async function shoot(page, outDir, name, shots) {
   const file = path.join(outDir, `${name}.png`);
-  await page.screenshot({ path: file });
+  // timeout: 60000 (vs Playwright's own 30000ms default) -- a cold full-page screenshot's
+  // compositor/rasterize pass can genuinely need >30s under real concurrent-agent system load
+  // (observed live during a network-isekai playtest-coscientist run tonight, load avg 170+;
+  // fixed there the same way, see kotoba-lang/playwright#1) even though the page itself isn't
+  // stuck -- a fixed 30s timeout with no override would abort the whole round for no real reason.
+  await page.screenshot({ path: file, timeout: 60000 });
   // Capture the SAME window.__slimeHunt* debug-hook state readState() already reads for the
   // controller, at this exact screenshot instant — the "actual game state" half of the
   // murakumo structured-state critic's prompt (kami-app-isekai.playtest.vision-score/
