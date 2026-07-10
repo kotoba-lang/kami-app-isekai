@@ -28,8 +28,10 @@
            ;; kami-engine-clj} next to this repo.
            :cljs-game {:extra-paths ["dev"]
                        :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
-                                    io.github.kotoba-lang/kami-webgpu
+                                    io.github.kotoba-lang/webgpu
                                     {:local/root "../webgpu"}
+                                    io.github.kotoba-lang/host
+                                    {:local/root "../host"}
                                     io.github.kotoba-lang/kami-engine-clj
                                     {:local/root "../kami-engine-clj"}}
                        :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}
