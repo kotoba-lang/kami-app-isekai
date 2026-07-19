@@ -33,7 +33,7 @@
                                     io.github.kotoba-lang/host
                                     {:local/root "../host"}
                                     io.github.kotoba-lang/kami-engine-clj
-                                    {:local/root "../kami-engine-clj"}}
+                                    {:local/root "../kami-engine"}}
                        :main-opts ["-m" "cljs.main" "-co" "dev/build.edn" "-c" "slime-hunt.game"]}
            ;; Playtest Co-Scientist (scripts/playtest_coscientist.clj + src/kami_app_isekai/
            ;; playtest/{vision_score,tuning}.cljc): JVM-only, generates+plays+scores+evolves
