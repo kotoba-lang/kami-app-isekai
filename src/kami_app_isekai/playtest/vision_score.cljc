@@ -57,7 +57,7 @@
   in-process 1Password shellout; export `MURAKUMO_CLAUDE_TOKEN=$(op item get
   \"gftd.murakumo/ANTHROPIC_PROXY_TOKEN\" --vault gftdcojp --fields credential --reveal)`
   before invoking this script if sourcing from 1Password)."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [langchain.jvm :as jvm]
             [langchain.model :as model]
             #?(:clj [clojure.java.io :as io])

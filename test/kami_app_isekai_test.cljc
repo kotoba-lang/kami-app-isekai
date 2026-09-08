@@ -4,7 +4,7 @@
   #[test]s in any of the 3 files (it's a wasm-bindgen game entrypoint);
   these provide coverage of the ported portable kernels/data."
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kami-app-isekai]
             [kami-app-isekai.voxel-world :as vw]
             [kami-app-isekai.pipelines :as pipelines]
