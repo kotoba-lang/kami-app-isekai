@@ -63,7 +63,7 @@
                 offline pixel heuristic, per ANTHROPIC_API_KEY)."
   (:require [clojure.java.shell :as sh]
             [clojure.java.io :as io]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [jsonista.core :as j]
             [kami-app-isekai.playtest.tuning :as tune]
             [kami-app-isekai.playtest.vision-score :as vs]
