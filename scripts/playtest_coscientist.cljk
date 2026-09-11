@@ -30,7 +30,7 @@
   network-isekai's `90-docs/coscientist/iteration-NN.md` convention.
 
   IMPORTANT ADAPTATION vs the task's literal wording (\"write it into scene.edn -> rebuild ->
-  run driver.mjs\"): dev/slime_hunt/game.cljs fetches public/games/slime-hunt/scene.edn at
+  run driver.mjs\"): dev/slime_hunt/game.cljk fetches public/games/slime-hunt/scene.edn at
   RUNTIME (`fetch-text`), it is NOT baked into dev/out/game.js at cljs-build time — so
   rewriting scene.edn between rounds needs no `bb slime-hunt-build` recompile, only a fresh
   page load (which driver.mjs already does per invocation). This script builds dev/out/
@@ -259,7 +259,7 @@
              "Judge: kotoba-lang/qa-governor (rubric + governor + append-only ledger) · "
              "following the ai-gftd-animeka coscientist pattern (generate -> score -> keep-winner) "
              "and isekai.ux.coscientist's propose/evaluate/iterate CLI shape.\n\n"
-             "Generated " (java.time.Instant/now) " by `scripts/playtest_coscientist.clj`.\n\n"
+             "Generated " (java.time.Instant/now) " by `scripts/playtest_coscientist.cljk`.\n\n"
              "Scoring backend: "
              (case backend
                :murakumo "**murakumo vision critic** (api.murakumo.cloud / qwen3.6-35b-a3b — confirmed vision-capable as of 2026-07-09, sent the actual screenshot as an image content block, with pixel-stats + captured game state as fallback-only text if the vision reply failed to parse; see `kami-app-isekai.playtest.vision-score/murakumo-critique`)"

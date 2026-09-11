@@ -27,7 +27,7 @@
 ;; `fixtures/glsl/*` are read cwd-relative, matching every other playwright_*_test.clj there):
 ;;
 ;;   cd ../webgpu && bb --classpath "../kami-app-isekai/src:../kami-app-isekai/render-test:src:../expr/src" \
-;;     -f ../kami-app-isekai/render-test/render_pixel_test.clj
+;;     -f ../kami-app-isekai/render-test/render_pixel_test.cljk
 ;;
 ;; (adjust the ../webgpu / ../expr / ../kami-app-isekai paths to wherever those checkouts live —
 ;; see this repo's .github/workflows/ci.yml's render-verify job for the exact CI layout, and

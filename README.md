@@ -35,7 +35,7 @@ GPU streaming/upload, and the Omniverse/USD/PhysX parse-and-drive orchestration.
 `voxel-world/terrain-height` (a 2-octave value-noise ridge, `[wx wz] -> height`,
 confined to `[terrain-height-min, terrain-height-max)` = `[18.0, 30.0)`) had never
 produced a single rendered pixel anywhere in this repo — it only ever fed
-`terrain-voxel-at`'s stone/grass/air `cond`. `render-test/render_pixel_test.clj`
+`terrain-voxel-at`'s stone/grass/air `cond`. `render-test/render_pixel_test.cljk`
 closes that gap: it samples `terrain-height` over a 40x40 grid of world `(x,z)`
 coordinates, maps each height to a color via `heightmap-color/height->color` (deep
 blue low -> grass green mid -> near-white high), and draws one colored `:rect` quad
@@ -59,7 +59,7 @@ technique, reapplied inline since that PR isn't merged yet).
 
 ## スライムハント (Slime Hunt) — a real, playable win/lose game
 
-`game.html` + `dev/slime_hunt/game.cljs` + `public/games/slime-hunt/{scene.edn,logic.cljc}`:
+`game.html` + `dev/slime_hunt/game.cljk` + `public/games/slime-hunt/{scene.edn,logic.cljc}`:
 a real-time dodge/collect arena, the first actual playable win/lose game to use this repo's
 `voxel-world`/`heightmap-color` terrain kernel for anything besides a standalone visualization.
 WASD/arrows move the player; dodge 3 elemental slimes (3 lives, drive's exact mechanic) while
@@ -72,7 +72,7 @@ rendered via `kami.scene2d` + `kami.webgl` (GPU-instanced 2D quads, WebGL2 — t
 `kami.sprite-gpu` pipeline the render-proof above pixel-verifies, not Canvas2D). The player's
 visual + move-speed and the 3 slime variants are composed via `kotoba-lang/kami-isekai-assets`
 (`kami.isekai.chargen`/`monsters`/`status`), and the arena background is a static bake of this
-repo's own `terrain-height` + `heightmap-color` kernel — see `scripts/gen_scene.clj`, which
+repo's own `terrain-height` + `heightmap-color` kernel — see `scripts/gen_scene.cljk`, which
 regenerates `public/games/slime-hunt/scene.edn` from all of the above (nothing hand-drawn).
 
 Dev-only, needs sibling checkouts next to this repo (same layout the render-test above uses):
@@ -81,7 +81,7 @@ Dev-only, needs sibling checkouts next to this repo (same layout the render-test
 
 ```bash
 bb slime-hunt-scene   # (re)bake scene.edn from the composers + terrain kernel
-bb slime-hunt-build   # compile dev/slime_hunt/game.cljs -> dev/out/game.js (cljs.main, no npm)
+bb slime-hunt-build   # compile dev/slime_hunt/game.cljk -> dev/out/game.js (cljs.main, no npm)
 python3 -m http.server 8931   # serve the repo root
 # open http://localhost:8931/game.html
 ```

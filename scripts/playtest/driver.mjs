@@ -4,12 +4,12 @@
 // The first time this ecosystem's playtest-via-Playwright work becomes a committed,
 // reusable script instead of one-off inline code (this session repeatedly play-tested
 // this same game via never-committed scripts dispatching real keyboard events, reading
-// the window.__slimeHunt* debug hooks, and taking screenshots — see dev/slime_hunt/game.cljs
+// the window.__slimeHunt* debug hooks, and taking screenshots — see dev/slime_hunt/game.cljk
 // for those hooks). Boots a local static server serving the built game (game.html +
 // dev/out/game.js + public/games/slime-hunt/{scene.edn,logic.cljc}), drives it with REAL
 // keyboard events (not scripted timings — a closed-loop controller polling
 // window.__slimeHuntSnapshot()/__slimeHuntGlobals() every tick, matching this game's own
-// fixed arena layout in public/games/slime-hunt/logic.cljc: player spawns at [0,0], 8 orbs
+// fixed arena layout in public/games/slime-hunt/logic.cljk: player spawns at [0,0], 8 orbs
 // on an r=450 ring, 3 slimes on an r=700 ring), and saves real PNG screenshots at the 5
 // moments the task calls out: title, just-after-a-pickup, just-after-a-hit, victory,
 // game-over.
