@@ -21,12 +21,12 @@
 ;; directory rather than `test/`: kami.playwright/kami.sprite-gpu/kami.wgsl live in the sibling
 ;; kotoba-lang/webgpu repo (+ ITS sibling kotoba-lang/expr, for kotoba.expr), not this repo's own
 ;; deps.edn — kami-app-isekai stays zero-dep/portable for everyone who doesn't want the render
-;; pipeline, and `clojure -M:test` (cognitect test-runner, which auto-requires every namespace
+;; pipeline, and `kbb -M:test` (cognitect test-runner, which auto-requires every namespace
 ;; under `:extra-paths ["test"]`) must never try to load this file. Run with bb, classpath
 ;; assembled from the 3 sibling checkouts, from a cwd of the webgpu checkout (its
 ;; `fixtures/glsl/*` are read cwd-relative, matching every other playwright_*_test.clj there):
 ;;
-;;   cd ../webgpu && bb --classpath "../kami-app-isekai/src:../kami-app-isekai/render-test:src:../expr/src" \
+;;   cd ../webgpu && kbb --classpath "../kami-app-isekai/src:../kami-app-isekai/render-test:src:../expr/src" \
 ;;     -f ../kami-app-isekai/render-test/render_pixel_test.cljk
 ;;
 ;; (adjust the ../webgpu / ../expr / ../kami-app-isekai paths to wherever those checkouts live —

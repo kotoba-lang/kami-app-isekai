@@ -32,14 +32,14 @@
   IMPORTANT ADAPTATION vs the task's literal wording (\"write it into scene.edn -> rebuild ->
   run driver.mjs\"): dev/slime_hunt/game.cljk fetches public/games/slime-hunt/scene.edn at
   RUNTIME (`fetch-text`), it is NOT baked into dev/out/game.js at cljs-build time — so
-  rewriting scene.edn between rounds needs no `bb slime-hunt-build` recompile, only a fresh
+  rewriting scene.edn between rounds needs no `kbb -M:slime-hunt-build` recompile, only a fresh
   page load (which driver.mjs already does per invocation). This script builds dev/out/
   game.js ONCE up front (only if missing) and then just rewrites scene.edn each round — this
   is what keeps a real end-to-end round cheap enough to run N=1-3 times per the task's own
   \"keep this SMALL\" instruction.
 
   Usage (from the kami-app-isekai repo root):
-    clojure -M:playtest -m playtest-coscientist [--rounds N] [--out-dir DIR]
+    kbb -M:playtest -m playtest-coscientist [--rounds N] [--out-dir DIR]
                                                  [--report PATH] [--skip-build] [--backend B]
   Default N=3 (override with --rounds; the task explicitly asks for a small N since every
   round is a real page load + playthrough, not instant — a verification run used --rounds 1).
@@ -98,7 +98,7 @@
     (println "[playtest-coscientist] dev/out/game.js missing -> bb slime-hunt-build (one-time; scene.edn tuning itself needs no rebuild, see namespace docstring)")
     (let [{:keys [exit err]} (sh/sh "bb" "slime-hunt-build")]
       (when-not (zero? exit)
-        (throw (ex-info "bb slime-hunt-build failed" {:exit exit :err err}))))))
+        (throw (ex-info "kbb -M:slime-hunt-build failed" {:exit exit :err err}))))))
 
 (defn- run-driver!
   "Runs scripts/playtest/driver.mjs against whatever's CURRENTLY on disk at scene-path,
