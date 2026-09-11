@@ -9,7 +9,7 @@
 ;;     see render-test/render_pixel_test.cljk — first real use of it in an actual game, not a
 ;;     standalone demo)
 ;;
-;; Run: `clojure -M:gen-scene` from the repo root (needs the sibling kotoba-lang/
+;; Run: `kbb -M:gen-scene` from the repo root (needs the sibling kotoba-lang/
 ;; kami-isekai-assets checkout the :gen-scene alias points at). Output is plain EDN you could
 ;; equally hand-edit afterward — this script exists for reproducibility/attribution of where
 ;; the visuals and the speed number came from, not as a runtime dependency of the game itself
@@ -171,4 +171,4 @@
     (println "wrote" out)
     (println "player-run (derived speed, spd-multiplier" speed-multiplier "):" player-run)
     (println "terrain tiles:" (count terrain-tiles))))
-;; `clojure -M:gen-scene` (main-opts `-m gen-scene`) already invokes -main — no top-level call here.
+;; `kbb -M:gen-scene` (main-opts `-m gen-scene`) already invokes -main — no top-level call here.

@@ -93,7 +93,7 @@ const { chromium } = resolvePlaywright();
 // ---- resolve the chromium binary ---------------------------------------------------------
 // kotoba-lang/webgpu PR #9's technique (cross-platform `chromium.executablePath()`, not a
 // hand-rolled macOS-only ~/Library/Caches/ms-playwright walk) — reapplied inline here the
-// same way kami-app-isekai's own CI does for `bb render-test` (see .github/workflows/ci.yml),
+// same way kami-app-isekai's own CI does for `kbb -M:render-test` (see .github/workflows/ci.yml),
 // since that PR wasn't merged to webgpu main at the time this was written.
 function findChromiumExe() {
   if (process.env.PW_EXE) return process.env.PW_EXE;

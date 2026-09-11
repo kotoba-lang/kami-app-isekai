@@ -62,8 +62,8 @@
                       ;; git/sha-pinned kotoba-lang/langchain; force it back to the same
                       ;; local sibling checkout used directly above (qa-governor's own :dev
                       ;; alias demonstrates the identical override for the identical reason).
-                      ;; No :main-opts here (deliberately) — `clojure -M:playtest -e …` for
-                      ;; interactive/test use and `clojure -M:playtest -m playtest-coscientist
+                      ;; No :main-opts here (deliberately) — `kbb -M:playtest -e …` for
+                      ;; interactive/test use and `kbb -M:playtest -m playtest-coscientist
                       ;; …` (scripts/playtest_coscientist.cljk) for the CLI both need to work;
                       ;; baking `-m playtest-coscientist` into :main-opts would hijack -e.
                       :override-deps {io.github.kotoba-lang/langchain

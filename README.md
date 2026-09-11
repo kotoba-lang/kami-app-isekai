@@ -49,10 +49,10 @@ brightness/blueness check across the three — grounded in the kernel's own math
 not a guessed color.
 
 This is a test/demo-only sibling dependency, **not** part of this repo's own
-`deps.edn` (`clojure -M:test`/`-M:lint` stay zero-dep): it needs sibling checkouts
+`deps.edn` (`kbb -M:test`/`-M:lint` stay zero-dep): it needs sibling checkouts
 of `kotoba-lang/webgpu` and `kotoba-lang/expr` next to this repo (the same layout
 the west-managed superproject already uses, `orgs/kotoba-lang/{kami-app-isekai,
-webgpu,expr}`). Run with `bb render-test` (see `bb.edn`); see
+webgpu,expr}`). Run with `kbb -M:render-test` (see `bb.edn`); see
 `.github/workflows/ci.yml`'s `render-verify` job for the exact CI layout, including
 the cross-platform headless-Chromium resolution fix (`kotoba-lang/webgpu` PR #9's
 technique, reapplied inline since that PR isn't merged yet).
@@ -80,24 +80,24 @@ Dev-only, needs sibling checkouts next to this repo (same layout the render-test
 `:cljs-game` aliases for exactly which ones each step needs.
 
 ```bash
-bb slime-hunt-scene   # (re)bake scene.edn from the composers + terrain kernel
-bb slime-hunt-build   # compile dev/slime_hunt/game.cljk -> dev/out/game.js (cljs.main, no npm)
+kbb -M:slime-hunt-scene   # (re)bake scene.edn from the composers + terrain kernel
+kbb -M:slime-hunt-build   # compile dev/slime_hunt/game.cljk -> dev/out/game.js (cljs.main, no npm)
 python3 -m http.server 8931   # serve the repo root
 # open http://localhost:8931/game.html
 ```
 
 ## Status
 
-Restored (scoped) — 12 `clojure -M:test` tests / 53 assertions, 0 failures (the
+Restored (scoped) — 12 `kbb -M:test` tests / 53 assertions, 0 failures (the
 original had no `#[test]`s in any of the 3 files; these provide coverage of the
-ported kernels/data), plus the render-test above (not part of `clojure -M:test`) and
+ported kernels/data), plus the render-test above (not part of `kbb -M:test`) and
 the スライムハント playable game above (verified by real Playwright playthroughs — see
 this feature's PR description for the win-path and lose-path evidence).
 
 ## Develop
 
 ```bash
-clojure -M:test
-clojure -M:lint
-bb render-test   # pixel-verified GPU render proof (needs sibling kotoba-lang/webgpu + expr checkouts)
+kbb -M:test
+kbb -M:lint
+kbb -M:render-test   # pixel-verified GPU render proof (needs sibling kotoba-lang/webgpu + expr checkouts)
 ```

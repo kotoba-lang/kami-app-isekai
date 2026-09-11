@@ -3,7 +3,7 @@
   parameters (the SPECIFIC keys that don't require a WASM recompile of logic.cljc, since
   scene.edn is fetched at RUNTIME by dev/slime_hunt/game.cljk — `fetch-text \"public/games/
   slime-hunt/scene.edn\"` — not baked into dev/out/game.js at cljs-build time; editing it
-  needs no `bb slime-hunt-build` between generations, only a page reload):
+  needs no `kbb -M:slime-hunt-build` between generations, only a page reload):
 
     :fx :burst :pick / :fx :burst :hit   — particle count/speed/gravity/life/size/colors
     :fx :shake                           — screen-shake amp/frames on hit
