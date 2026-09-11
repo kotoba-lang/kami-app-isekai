@@ -2,7 +2,7 @@
 
 > Driver: scripts/playtest/driver.mjs (real headless-Chromium playthrough, kotoba-lang/webgpu PR #9's `chromium.executablePath()` technique) · Scorer: kami-app-isekai.playtest.vision-score (0 candidate round(s) + 1 baseline round) · Judge: kotoba-lang/qa-governor (rubric + governor + append-only ledger) · following the ai-gftd-animeka coscientist pattern (generate -> score -> keep-winner) and isekai.ux.coscientist's propose/evaluate/iterate CLI shape.
 
-Generated 2026-07-09T07:33:50.639286Z by `scripts/playtest_coscientist.clj`.
+Generated 2026-07-09T07:33:50.639286Z by `scripts/playtest_coscientist.cljk`.
 
 Scoring backend: **murakumo structured-state critic** (api.murakumo.cloud / qwen-agentworld-35b-a3b — TEXT-ONLY model, sent pixel-stats + captured game state as plain text, NOT a screenshot image; see `kami-app-isekai.playtest.vision-score/structured-state-critique`)
 

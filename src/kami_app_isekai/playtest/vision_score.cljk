@@ -176,7 +176,7 @@
 
 ;; ───────────────────────── offline heuristic (mock/degrade path) ─────────────────────────
 ;; JVM-only (javax.imageio / java.awt.image): this whole feature is a JVM CLI tool (see
-;; scripts/playtest_coscientist.clj), never invoked from a :cljs/WASM build — no portable
+;; scripts/playtest_coscientist.cljk), never invoked from a :cljs/WASM build — no portable
 ;; fallback is needed on those platforms.
 
 #?(:clj
@@ -521,7 +521,7 @@
 
 #?(:clj
    (defn murakumo-critique
-     "The murakumo backend's top-level public entry point — what `scripts/playtest_coscientist.clj`
+     "The murakumo backend's top-level public entry point — what `scripts/playtest_coscientist.cljk`
      calls for the :murakumo backend. Tries `murakumo-vision-critique` (real vision, PRIMARY —
      already retries transient HTTP failures internally, see `retry-transient`) first; ONLY
      when that reply is still :parsed false after every retry (e.g. a future model swap that

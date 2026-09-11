@@ -53,7 +53,7 @@
 
 ;; ---- terrain background: bake scene :terrain :tiles into static GPU quads, once at boot -----
 ;; (kami-app-isekai.voxel-world/terrain-height + .heightmap-color already ran at scene-authoring
-;; time — see scripts/gen_scene.clj; this just turns the baked {:x :y :color} tiles into the
+;; time — see scripts/gen_scene.cljk; this just turns the baked {:x :y :color} tiles into the
 ;; {:pos :size :rot :shape :color} quad shape kami.sprite-gpu/kami.scene2d expects. shape 1 = rect.)
 (defn- terrain-quads [scene]
   (let [{:keys [tile-size tiles]} (:terrain scene)
@@ -291,7 +291,7 @@
 (defn ^:export main []
   (let [canvas (js/document.getElementById "game-canvas")
         status (js/document.getElementById "status")]
-    (-> (js/Promise.all #js [(fetch-text "public/games/slime-hunt/scene.edn") (fetch-text "public/games/slime-hunt/logic.cljc")])
+    (-> (js/Promise.all #js [(fetch-text "public/games/slime-hunt/scene.edn") (fetch-text "public/games/slime-hunt/logic.cljk")])
         (.then (fn [texts]
                  (let [scene-src (aget texts 0) logic-src (aget texts 1)
                        scene (edn/read-string scene-src)
