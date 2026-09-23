@@ -1,7 +1,12 @@
 ;; babashka task runner for kami-app-isekai. Only `render-test` lives here — the CLJC
 ;; kernels/data themselves are exercised by `kbb -M:test` (see deps.edn), which stays
 ;; free of any dependency on the render pipeline below.
-{:tasks
+{:deps {
+        ;; kotoba.lang.edn replaced clojure.edn here (2026-09-23). An explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, and kbb resolves git deps
+        ;; only from nbb.edn, so every project file this repo has names it.
+        io.github.kotoba-lang/edn {:git/sha "79dba32c8892058842c57783f06a2dfe4601aeb0"}}
+ :tasks
  {render-test
   {:doc "Pixel-verified proof (real headless-Chromium WebGL2 readPixels, not just \"compiles\")
          that kami-app-isekai.voxel-world/terrain-height — the extracted terrain-height kernel,
