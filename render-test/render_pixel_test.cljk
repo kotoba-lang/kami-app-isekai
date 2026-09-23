@@ -34,7 +34,7 @@
 ;; bb.edn's render-test task for a local one-liner given the west-managed sibling layout under
 ;; orgs/kotoba-lang/{kami-app-isekai,webgpu,expr}).
 (ns render-pixel-test
-  (:require [clojure.test :refer [deftest is run-tests]]
+  (:require [kotoba.test :refer [deftest is run-tests]]
             [kami-app-isekai.voxel-world :as vw]
             [kami-app-isekai.heightmap-color :as hc]
             [kami.playwright :as pw]

@@ -3,7 +3,7 @@
   engine/kami-app-isekai, deleted PR #82). The original had no
   #[test]s in any of the 3 files (it's a wasm-bindgen game entrypoint);
   these provide coverage of the ported portable kernels/data."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [kami-app-isekai]
             [kami-app-isekai.voxel-world :as vw]
