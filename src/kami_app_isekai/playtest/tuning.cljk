@@ -37,7 +37,7 @@
   ;; gating the require itself per-branch make an all-:clj reader-conditional require list
   ;; elide to nothing on a :cljs read, which is a genuine (if lint-only, not a runtime) error
   ;; — an unconditional require + :clj-only usage is the simpler, still-correct shape.
-  (:require [clojure.edn :as edn]
+  (:require [kotoba.lang.edn :as edn]
             [clojure.pprint :as pp]))
 
 ;; ───────────────────────── read / write scene.edn ─────────────────────────
