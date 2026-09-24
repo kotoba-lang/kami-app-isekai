@@ -1,5 +1,9 @@
 {:paths ["src" "test"]
  :deps {
+        ;; kotoba.pprint replaced clojure.pprint here (2026-09-24): the same
+        ;; bytes (cljs.pprint transcribed). An explicit floor; tools.deps takes the
+        ;; NEWEST sha it is shown.
+        io.github.kotoba-lang/pprint {:git/sha "5c9d4aea71d6caac529fffcf361aba0f87ee485e"}
         ;; kotoba.process replaced clojure.java.shell here (2026-09-24). An explicit
         ;; floor: kotoba.process/sh parses clojure.java.shell's options from db49ea9,
         ;; and tools.deps takes the NEWEST sha it is shown.
