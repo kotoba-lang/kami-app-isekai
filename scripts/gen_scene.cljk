@@ -20,7 +20,7 @@
             [kami.isekai.status :as status]
             [kami-app-isekai.voxel-world :as vw]
             [kami-app-isekai.heightmap-color :as hc]
-            [clojure.pprint :as pp]))
+            [kotoba.pprint :as pp]))
 
 ;; ---- player: composed via chargen, tagged "player" in the arena ECS ----
 (def player-race :human)
