@@ -62,7 +62,7 @@
     anthropic — forces the original score-screenshot path (live Claude vision model or the
                 offline pixel heuristic, per ANTHROPIC_API_KEY)."
   (:require [kotoba.process :as sh]
-            [clojure.java.io :as io]
+            [kotoba.io :as io]
             [kotoba.lang.text :as str]
             [jsonista.core :as j]
             [kami-app-isekai.playtest.tuning :as tune]
@@ -94,7 +94,7 @@
 (def game-js-path "dev/out/game.js")
 
 (defn- ensure-game-built! [skip-build?]
-  (when (and (not skip-build?) (not (.exists (io/file game-js-path))))
+  (when (and (not skip-build?) (not (io/exists? (io/file game-js-path))))
     (println "[playtest-coscientist] dev/out/game.js missing -> bb slime-hunt-build (one-time; scene.edn tuning itself needs no rebuild, see namespace docstring)")
     (let [{:keys [exit err]} (sh/sh "bb" "slime-hunt-build")]
       (when-not (zero? exit)
