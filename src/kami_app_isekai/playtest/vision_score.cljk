@@ -57,10 +57,10 @@
   in-process 1Password shellout; export `MURAKUMO_CLAUDE_TOKEN=$(op item get
   \"gftd.murakumo/ANTHROPIC_PROXY_TOKEN\" --vault gftdcojp --fields credential --reveal)`
   before invoking this script if sourcing from 1Password)."
-  (:require [kotoba.lang.text :as str]
+  (:require [kotoba.image :as image] [kotoba.bytes :as kbytes] [kotoba.lang.text :as str]
             [langchain.jvm :as jvm]
             [langchain.model :as model]
-            #?(:clj [clojure.java.io :as io])
+            #?(:clj [kotoba.io :as io])
             #?(:clj [org.httpkit.client :as http])))
 
 ;; ───────────────────────── model selection / credentials ─────────────────────────
@@ -180,9 +180,9 @@
 ;; fallback is needed on those platforms.
 
 #?(:clj
-   (defn- decode-image ^java.awt.image.BufferedImage [b64]
-     (let [bytes (.decode (java.util.Base64/getDecoder) b64)]
-       (javax.imageio.ImageIO/read (java.io.ByteArrayInputStream. bytes)))))
+   (defn- decode-image [b64]
+     (let [bytes (kbytes/base64-decode-bytes b64)]
+       (image/read-image bytes))))
 
 #?(:clj
    (defn- pixel-stats
@@ -192,9 +192,9 @@
      :n-colors :n}. :vivid-frac = fraction of sampled pixels whose max-channel minus
      min-channel exceeds 40 (a cheap 'this pixel is saturated/colorful, not grey' test).
      :n-colors = count of distinct coarsely-quantized (64-level-per-channel) colors seen."
-     [^java.awt.image.BufferedImage img]
-     (let [w (.getWidth img) h (.getHeight img) stride 6
-           pixels (for [y (range 0 h stride) x (range 0 w stride)] (.getRGB img x y))
+     [img]
+     (let [w (image/width img) h (image/height img) stride 6
+           pixels (for [y (range 0 h stride) x (range 0 w stride)] (image/get-rgb img x y))
            rgbs (mapv (fn [p] [(bit-and (bit-shift-right p 16) 0xff)
                                (bit-and (bit-shift-right p 8) 0xff)
                                (bit-and p 0xff)])
@@ -282,7 +282,7 @@
      [path]
      (with-open [in (io/input-stream (io/file path))]
        (let [bytes (.readAllBytes in)]
-         (.encodeToString (java.util.Base64/getEncoder) bytes)))))
+         (kbytes/base64-encode bytes)))))
 
 ;; ───────────────────────── murakumo structured-state critic (3rd backend) ─────────────────────────
 ;; See namespace docstring for the full rationale (qwen-agentworld-35b-a3b behind
